@@ -1,0 +1,111 @@
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { api, tokenStore } from './api';
+import { User } from './types';
+import Login from './pages/Login';
+import AdminDashboard from './pages/AdminDashboard';
+import ClientDashboard from './pages/ClientDashboard';
+import Clients from './pages/Clients';
+import Projects from './pages/Projects';
+import Activities from './pages/Activities';
+import Agenda from './pages/Agenda';
+import Hours from './pages/Hours';
+import Reports from './pages/Reports';
+import Audit from './pages/Audit';
+import Appointments from './pages/Appointments';
+
+interface Session {
+  user: User | null;
+  token: string | null;
+  setSession: (user: User, token: string) => void;
+  logout: () => void;
+  loading: boolean;
+}
+
+const Ctx = createContext<Session>({
+  user: null, token: null, setSession: () => {}, logout: () => {}, loading: true
+});
+
+export function useSession() { return useContext(Ctx); }
+
+export default function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const t = tokenStore().get();
+    if (!t) { setLoading(false); return; }
+    api.get('/auth/me', t).then((r: any) => {
+      setUser(r.user); setToken(t);
+    }).catch(() => tokenStore().clear())
+      .finally(() => setLoading(false));
+  }, []);
+
+  const setSession = (u: User, t: string) => {
+    tokenStore().set(t); setUser(u); setToken(t);
+  };
+  const logout = () => { tokenStore().clear(); setUser(null); setToken(null); };
+
+  if (loading) return <div className="center">Cargando…</div>;
+
+  return (
+    <Ctx.Provider value={{ user, token, setSession, logout, loading }}>
+      <Routes>
+        <Route path="/login" element={user ? <Navigate to="/" /> : <Login />} />
+        <Route path="/set-password" element={<Login />} />
+        <Route path="/reset" element={<Login />} />
+        {!user && <Route path="*" element={<Navigate to="/login" />} />}
+        {user && (
+          <Route path="/*" element={
+            <Layout>
+              <Routes>
+                <Route path="/" element={user.role === 'admin' ? <AdminDashboard /> : <ClientDashboard />} />
+                <Route path="/clients" element={<Clients />} />
+                <Route path="/projects" element={<Projects />} />
+                <Route path="/activities" element={<Activities />} />
+                <Route path="/agenda" element={<Agenda />} />
+                <Route path="/appointments" element={<Appointments />} />
+                <Route path="/hours" element={<Hours />} />
+                <Route path="/reports" element={<Reports />} />
+                <Route path="/audit" element={<Audit />} />
+              </Routes>
+            </Layout>
+          } />
+        )}
+      </Routes>
+    </Ctx.Provider>
+  );
+}
+
+function Layout({ children }: { children: ReactNode }) {
+  const { user, logout } = useSession();
+  const nav = [
+    { to: '/', label: 'Inicio' },
+    ...(user?.role === 'admin' ? [{ to: '/clients', label: 'Clientes' }] : []),
+    { to: '/projects', label: 'Proyectos' },
+    { to: '/activities', label: 'Actividades' },
+    { to: '/agenda', label: 'Agenda' },
+    { to: '/appointments', label: 'Citas' },
+    { to: '/hours', label: 'Horas' },
+    { to: '/reports', label: 'Reportes' },
+    ...(user?.role === 'admin' ? [{ to: '/audit', label: 'Auditoría' }] : [])
+  ];
+  return (
+    <div className="layout">
+      <aside className="sidebar">
+        <div className="brand">Consultoría Control</div>
+        <nav>
+          {nav.map((n) => (
+            <a key={n.to} href={`#${n.to}`} onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', n.to); window.dispatchEvent(new PopStateEvent('popstate')); }}>{n.label}</a>
+          ))}
+        </nav>
+        <div className="sidebar-foot">
+          <span>{user?.first_name} {user?.last_name} ({user?.role})</span>
+          <button onClick={logout}>Salir</button>
+        </div>
+      </aside>
+      <main className="content">{children}</main>
+    </div>
+  );
+}
