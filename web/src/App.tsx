@@ -88,6 +88,7 @@ export default function App() {
 
 function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useSession();
+  const loc = window.location.pathname;
   const nav = [
     { to: '/', label: 'Inicio' },
     ...(user?.role === 'admin' ? [{ to: '/clients', label: 'Clientes' }] : []),
@@ -109,7 +110,7 @@ function Layout({ children }: { children: ReactNode }) {
         <div className="brand">Consultoría Control</div>
         <nav>
           {nav.map((n) => (
-            <a key={n.to} href={`#${n.to}`} onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', n.to); window.dispatchEvent(new PopStateEvent('popstate')); }}>{n.label}</a>
+            <a key={n.to} href={`#${n.to}`} className={loc === n.to ? 'active' : ''} onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', n.to); window.dispatchEvent(new PopStateEvent('popstate')); }}>{n.label}</a>
           ))}
         </nav>
         <div className="sidebar-foot">

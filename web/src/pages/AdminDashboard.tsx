@@ -20,7 +20,7 @@ export default function AdminDashboard() {
     { num: d.hours_today, lbl: 'Horas hoy' },
     { num: d.hours_week, lbl: 'Horas esta semana' },
     { num: d.billable_hours_month, lbl: 'Horas facturables (mes)' },
-    { num: '$' + (d.billable_value_month || 0), lbl: 'Valor facturable (mes)' },
+    { num: '$' + (d.billable_value_month || 0).toLocaleString('es-CO'), lbl: 'Valor facturable (mes)' },
     { num: d.active_projects, lbl: 'Proyectos activos' },
     { num: d.overdue_activities, lbl: 'Actividades vencidas' },
     { num: d.pending_appointments, lbl: 'Citas pendientes' },
