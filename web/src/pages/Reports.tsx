@@ -17,6 +17,21 @@ export default function Reports() {
   }
   useEffect(() => { load(); }, [token]);
 
+  async function exportAs(fmt: 'csv' | 'excel' | 'pdf') {
+    const ep = fmt === 'excel' ? 'excel' : fmt;
+    const url = `/api/export/hours/${ep}?from=${range.from}&to=${range.to}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) { alert('No se pudo exportar (HTTP ' + res.status + ')'); return; }
+    const blob = await res.blob();
+    const names: Record<string, string> = { csv: 'reporte_horas.csv', excel: 'reporte_horas.xlsx', pdf: 'reporte_horas.pdf' };
+    const types: Record<string, string> = { csv: 'text/csv', excel: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', pdf: 'application/pdf' };
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([blob], { type: types[fmt] }));
+    a.download = names[fmt];
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(a.href);
+  }
+
   return (
     <div>
       <h2>Reportes</h2>
@@ -24,9 +39,9 @@ export default function Reports() {
         <div><label>Desde</label><input type="date" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} /></div>
         <div><label>Hasta</label><input type="date" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} /></div>
         <button onClick={load}>Generar</button>
-        <a href={`/api/export/hours/csv?from=${range.from}&to=${range.to}`}><button className="ghost" type="button">CSV</button></a>
-        <a href={`/api/export/hours/excel?from=${range.from}&to=${range.to}`}><button className="ghost" type="button">Excel</button></a>
-        <a href={`/api/export/hours/pdf?from=${range.from}&to=${range.to}`}><button className="ghost" type="button">PDF</button></a>
+        <button className="ghost" type="button" onClick={() => exportAs('csv')}>CSV</button>
+        <button className="ghost" type="button" onClick={() => exportAs('excel')}>Excel</button>
+        <button className="ghost" type="button" onClick={() => exportAs('pdf')}>PDF</button>
       </div>
       {hours && (
         <div className="grid cols-3" style={{ marginTop: 16 }}>
