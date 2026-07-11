@@ -2,6 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useSession } from '../App';
 
+function go(to: string) {
+  window.history.pushState({}, '', to);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
 export default function AdminDashboard() {
   const { token } = useSession();
   const [d, setD] = useState<any>(null);
@@ -35,11 +40,11 @@ export default function AdminDashboard() {
       <div className="card">
         <strong>Acciones rápidas</strong>
         <div className="row wrap" style={{ marginTop: 12 }}>
-          <a href="#/clients"><button className="ghost">Crear cliente</button></a>
-          <a href="#/projects"><button className="ghost">Crear proyecto</button></a>
-          <a href="#/activities"><button className="ghost">Crear actividad</button></a>
-          <a href="#/hours"><button className="ghost">Registrar tiempo</button></a>
-          <a href="#/agenda"><button className="ghost">Publicar disponibilidad</button></a>
+          <button className="ghost" onClick={() => go('/clients')}>Crear cliente</button>
+          <button className="ghost" onClick={() => go('/projects')}>Crear proyecto</button>
+          <button className="ghost" onClick={() => go('/activities')}>Crear actividad</button>
+          <button className="ghost" onClick={() => go('/hours')}>Registrar tiempo</button>
+          <button className="ghost" onClick={() => go('/agenda')}>Publicar disponibilidad</button>
         </div>
       </div>
     </div>
