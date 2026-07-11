@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { useSession } from '../App';
 import Updates from './Updates';
+import FileManager from './FileManager';
 
 export default function Activities() {
   const { token, user } = useSession();
@@ -83,6 +84,7 @@ export default function Activities() {
             <h2>{detail.activity.title}</h2>
             <p className="badge">{detail.activity.status}</p>
             <Updates activityId={detail.activity.id} />
+            <FileManager entityType="activities" entityId={detail.activity.id} />
             <button className="ghost" onClick={() => setDetail(null)}>Cerrar</button>
           </div>
         </div>

@@ -26,7 +26,7 @@ export const config = {
     pass: env('SMTP_PASS', ''),
     from: env('MAIL_FROM', 'no-reply@consultoriacontrol.app')
   },
-  uploadDir: env('UPLOAD_DIR', './uploads'),
+  uploadDir: env('UPLOAD_DIR', '/uploads'),
   maxFileMb: parseInt(env('MAX_FILE_MB', '20'), 10),
   defaultTz: env('DEFAULT_TZ', 'America/Bogota'),
   // Si SMTP_HOST está vacío, simulamos el envío (no se manda correo real).

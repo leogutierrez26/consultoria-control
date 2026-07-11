@@ -17,7 +17,7 @@ COPY --from=build /app/dist ./dist
 # Copiar migraciones SQL (tsc no las incluye en dist) (RF-TEC-009)
 COPY src/migrations/ ./migrations/
 # Volumen para archivos persistentes (RF-TEC-007)
-RUN mkdir -p /uploads
+RUN mkdir -p /uploads && chown -R node:node /uploads && chmod 755 /uploads
 VOLUME ["/uploads"]
 # Usuario sin privilegios (RF-TEC-005)
 USER node

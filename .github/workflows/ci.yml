@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: consultoria
+          POSTGRES_USER: consultoria
+          POSTGRES_PASSWORD: consultoria
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U consultoria -d consultoria"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --workspace server
+      - run: npm run build --workspace server
+      - name: Run tests
+        env:
+          DATABASE_URL: postgres://consultoria:consultoria@localhost:5432/consultoria
+          JWT_SECRET: ci-secret
+        run: npm run test --workspace server
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --workspace web
+      - run: npm run build --workspace web

@@ -24,6 +24,9 @@ export default function Reports() {
         <div><label>Desde</label><input type="date" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} /></div>
         <div><label>Hasta</label><input type="date" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} /></div>
         <button onClick={load}>Generar</button>
+        <a href={`/api/export/hours/csv?from=${range.from}&to=${range.to}`}><button className="ghost" type="button">CSV</button></a>
+        <a href={`/api/export/hours/excel?from=${range.from}&to=${range.to}`}><button className="ghost" type="button">Excel</button></a>
+        <a href={`/api/export/hours/pdf?from=${range.from}&to=${range.to}`}><button className="ghost" type="button">PDF</button></a>
       </div>
       {hours && (
         <div className="grid cols-3" style={{ marginTop: 16 }}>

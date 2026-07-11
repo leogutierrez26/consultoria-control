@@ -13,6 +13,10 @@ import Hours from './pages/Hours';
 import Reports from './pages/Reports';
 import Audit from './pages/Audit';
 import Appointments from './pages/Appointments';
+import Notifications from './pages/Notifications';
+import HourBank from './pages/HourBank';
+import Templates from './pages/Templates';
+import Kanban from './pages/Kanban';
 
 interface Session {
   user: User | null;
@@ -64,10 +68,14 @@ export default function App() {
                 <Route path="/clients" element={<Clients />} />
                 <Route path="/projects" element={<Projects />} />
                 <Route path="/activities" element={<Activities />} />
+                <Route path="/kanban" element={<Kanban />} />
                 <Route path="/agenda" element={<Agenda />} />
                 <Route path="/appointments" element={<Appointments />} />
                 <Route path="/hours" element={<Hours />} />
                 <Route path="/reports" element={<Reports />} />
+                <Route path="/notifications" element={<Notifications />} />
+                <Route path="/hourbank" element={<HourBank />} />
+                <Route path="/templates" element={<Templates />} />
                 <Route path="/audit" element={<Audit />} />
               </Routes>
             </Layout>
@@ -85,10 +93,14 @@ function Layout({ children }: { children: ReactNode }) {
     ...(user?.role === 'admin' ? [{ to: '/clients', label: 'Clientes' }] : []),
     { to: '/projects', label: 'Proyectos' },
     { to: '/activities', label: 'Actividades' },
+    { to: '/kanban', label: 'Tablero' },
     { to: '/agenda', label: 'Agenda' },
     { to: '/appointments', label: 'Citas' },
     { to: '/hours', label: 'Horas' },
     { to: '/reports', label: 'Reportes' },
+    { to: '/notifications', label: 'Notificaciones' },
+    ...(user?.role === 'admin' ? [{ to: '/hourbank', label: 'Bolsa horas' }] : []),
+    ...(user?.role === 'admin' ? [{ to: '/templates', label: 'Plantillas' }] : []),
     ...(user?.role === 'admin' ? [{ to: '/audit', label: 'Auditoría' }] : [])
   ];
   return (

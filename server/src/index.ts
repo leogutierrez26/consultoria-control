@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
+import helmet from 'helmet';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 import { config } from './config';
@@ -20,8 +21,13 @@ import reportsRoutes from './routes/reports';
 import notificationsRoutes from './routes/notifications';
 import auditRoutes from './routes/audit';
 import configRoutes from './routes/config';
+import filesRoutes from './routes/files';
+import exportRoutes from './routes/export';
+import hourbankRoutes from './routes/hourbank';
+import templatesRoutes from './routes/templates';
 
 const app = express();
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(express.json({ limit: '25mb' }));
 app.use(morgan('dev'));
@@ -50,6 +56,10 @@ app.use('/api/reports', reportsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/config', configRoutes);
+app.use('/api/files', filesRoutes);
+app.use('/api/export', exportRoutes);
+app.use('/api/hourbank', hourbankRoutes);
+app.use('/api/templates', templatesRoutes);
 
 // Documentación OpenAPI (RF-TEC-004)
 const swaggerSpec = swaggerJsdoc({
@@ -82,10 +92,12 @@ async function start(): Promise<void> {
   } catch (e) {
     console.error('No se pudieron aplicar migraciones:', (e as Error).message);
   }
-  app.listen(config.apiPort, () => {
-    console.log(`[server] Consultoría Control API escuchando en puerto ${config.apiPort}`);
-    console.log(`[server] Docs: http://localhost:${config.apiPort}/api-docs`);
-  });
+  if (require.main === module) {
+    app.listen(config.apiPort, () => {
+      console.log(`[server] Consultoría Control API escuchando en puerto ${config.apiPort}`);
+      console.log(`[server] Docs: http://localhost:${config.apiPort}/api-docs`);
+    });
+  }
 }
 
 start();

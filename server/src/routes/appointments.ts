@@ -6,6 +6,7 @@ import { asyncHandler, validate } from '../middleware';
 import { query } from '../db';
 import { audit } from '../audit';
 import { sendMail, templates } from '../mail';
+import { notify, notifyClient, notifyAdmins } from '../notifications';
 
 const router = Router();
 
@@ -76,6 +77,8 @@ router.post(
       if (status === 'confirmada') await sendMail({ to: c.rows[0].email, subject: 'Cita confirmada', html: templates.appointmentConfirmed(when) });
       else await sendMail({ to: c.rows[0].email, subject: 'Cita registrada', html: templates.appointmentCreated(c.rows[0].legal_name, when) });
     }
+    await notifyClient(client_id, 'cita_creada', 'Nueva cita registrada', `Cita para ${new Date(start_time).toLocaleString()}`);
+    await notifyAdmins('cita_creada', 'Nueva cita solicitada', `Cliente ${c.rows[0]?.legal_name || client_id}`);
     audit({ user_id: uid, action: 'create', entity: 'appointments', entity_id: id, new_values: { status }, ip_address: req.ip });
     res.status(201).json({ appointment: { id, status, start_time, end_time } });
   })
@@ -108,6 +111,11 @@ router.post(
     if (status) {
       await query('UPDATE appointments SET status = $1, updated_at = NOW() WHERE id = $2', [status, req.params.id]);
       audit({ user_id: (req as any).user.uid, action: 'status_change', entity: 'appointments', entity_id: req.params.id, old_values: { status: appt.status }, new_values: { status } });
+      const label: Record<string, string> = {
+        confirmada: 'Cita confirmada', rechazada: 'Cita rechazada', atendida: 'Cita atendida',
+        cancelada_admin: 'Cita cancelada', cancelada_cliente: 'Cita cancelada', reprogramada: 'Cita reprogramada'
+      };
+      await notifyClient(appt.client_id, 'cita_confirmada', label[status] || 'Cita actualizada', `Estado: ${status}`);
     }
     // RF-CIT-011 convertir cita atendida en entrada de tiempo
     if (req.params.action === 'attend') {

@@ -5,6 +5,7 @@ import { requireAuth, requireAdmin, currentClientId, isAdmin, ApiError } from '.
 import { asyncHandler, validate } from '../middleware';
 import { query } from '../db';
 import { audit } from '../audit';
+import { evaluateAfterHours } from '../hourbank';
 
 const router = Router();
 
@@ -39,6 +40,7 @@ router.post(
       [id, uid, client_id, project_id, activity_id || null, work_date.slice(0, 10), start_time || null, end_time || null, dur, description, billable, rate]
     );
     audit({ user_id: uid, action: 'hours_log', entity: 'time_entries', entity_id: id, new_values: { duration_minutes: dur, billable } });
+    await evaluateAfterHours(client_id);
     res.status(201).json({ entry: { id, duration_minutes: dur } });
   })
 );
@@ -142,6 +144,7 @@ router.post(
     );
     await query('DELETE FROM timers WHERE id = $1', [req.params.id]);
     audit({ user_id: uid, action: 'hours_log', entity: 'time_entries', entity_id: id, new_values: { from_timer: true, duration_minutes } });
+    await evaluateAfterHours(t.client_id);
     res.status(201).json({ entry: { id, duration_minutes } });
   })
 );

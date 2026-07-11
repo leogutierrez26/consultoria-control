@@ -6,6 +6,7 @@ import { asyncHandler, validate } from '../middleware';
 import { query } from '../db';
 import { audit } from '../audit';
 import { sendMail, templates } from '../mail';
+import { notifyClient, notifyAdmins } from '../notifications';
 
 const router = Router();
 
@@ -41,6 +42,8 @@ router.post(
     if (c.rows[0] && visible_to_client && c.rows[0].email) {
       await sendMail({ to: c.rows[0].email, subject: 'Nuevo proyecto', html: templates.projectCreated(c.rows[0].legal_name, name) });
     }
+    await notifyClient(client_id, 'proyecto_creado', `Proyecto creado: ${name}`);
+    audit({ user_id: (req as any).user.uid, action: 'create', entity: 'projects', entity_id: id, new_values: req.body, ip_address: req.ip, user_agent: req.headers['user-agent'] as string });
     res.status(201).json({ project: { id, ...req.body } });
   })
 );

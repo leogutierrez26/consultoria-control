@@ -5,6 +5,8 @@ import { Pool } from 'pg';
 import { config } from '../config';
 import app from '../index';
 
+let BASE = (process.env.BASE_URL || 'http://127.0.0.1:4000').replace(/\/$/, '');
+
 let passed = 0;
 let failed = 0;
 const failures: string[] = [];
@@ -63,14 +65,18 @@ function assert(cond: boolean, msg: string): void {
 }
 
 async function main(): Promise<void> {
+  // Usa el server real en Docker (puerto 4000) que ya tiene migraciones y código.
+  // BASE por defecto apunta allí; configurable vía BASE_URL.
   // Limpieza inicial para idempotencia
   const pool = new Pool({ connectionString: config.databaseUrl });
   await pool.query('DELETE FROM time_entries');
   await pool.query('DELETE FROM timers');
+  await pool.query('DELETE FROM notifications');
   await pool.query('DELETE FROM appointments');
   await pool.query('DELETE FROM updates');
   await pool.query('DELETE FROM activities');
   await pool.query('DELETE FROM projects');
+  await pool.query('DELETE FROM files');
   await pool.query('DELETE FROM users WHERE role = $1', ['client']);
   await pool.query('DELETE FROM clients');
   await pool.query("DELETE FROM users WHERE email = $1", ['admin@test.local']);
@@ -182,6 +188,49 @@ async function main(): Promise<void> {
   const seesOther = (r.body.projects || []).some((p: any) => p.client_id === c2Id);
   assert(r.status === 200 && !seesOther, 'cliente solo ve sus propios proyectos (RN-004)');
 
+  console.log('\n== Archivos (RF-ARC) ==');
+  const fd = new FormData();
+  fd.append('entity_type', 'projects');
+  fd.append('entity_id', projectId);
+  fd.append('visibility', 'cliente');
+  fd.append('file', new Blob(['contenido de prueba'], { type: 'text/plain' }), 'doc.txt');
+  const up = await fetch(BASE + '/api/files', {
+    method: 'POST', headers: { Authorization: 'Bearer ' + adminToken }, body: fd
+  });
+  const upJson = await up.json();
+  assert(up.status === 201 && upJson.file?.id, 'adjuntar archivo a proyecto (RF-ARC-001)');
+  const fid = upJson.file.id;
+  const lst = await request('GET', `/api/files/entity/projects/${projectId}`, adminToken);
+  assert(lst.status === 200 && (lst.body.files || []).some((f: any) => f.id === fid), 'listar archivos de entidad (RF-ARC-006)');
+  const dl = await fetch(BASE + `/api/files/${fid}/download`, { headers: { Authorization: 'Bearer ' + adminToken } });
+  assert(dl.status === 200, 'descargar archivo (RF-ARC-006)');
+  const del = await request('POST', `/api/files/${fid}/delete`, adminToken, { reason: 'test' });
+  assert(del.status === 200, 'eliminación lógica de archivo (RF-ARC-007)');
+
+  console.log('\n== Exportación (RF-REP-006) ==');
+  const csv = await fetch(BASE + '/api/export/hours/csv', { headers: { Authorization: 'Bearer ' + adminToken } });
+  assert(csv.status === 200 && (csv.headers.get('content-type') || '').includes('csv'), 'export CSV');
+  const xls = await fetch(BASE + '/api/export/hours/excel', { headers: { Authorization: 'Bearer ' + adminToken } });
+  assert(xls.status === 200 && (xls.headers.get('content-type') || '').includes('spreadsheet'), 'export Excel');
+  const pdf = await fetch(BASE + '/api/export/hours/pdf', { headers: { Authorization: 'Bearer ' + adminToken } });
+  assert(pdf.status === 200 && (pdf.headers.get('content-type') || '').includes('pdf'), 'export PDF');
+
+  console.log('\n== Bolsa de horas + alertas (RF-CLI-006 / RF-PRY-008) ==');
+  const hb = await request('PUT', `/api/hourbank/${clientId}`, adminToken, { enabled: true, contracted: 10, start: '2026-01-01', end: '2026-12-31' });
+  assert(hb.status === 200, 'configurar bolsa de horas');
+  const hbGet = await request('GET', `/api/hourbank/${clientId}`, adminToken);
+  assert(hbGet.status === 200 && parseFloat(hbGet.body.contracted_hours) === 10, 'consultar bolsa refleja contratadas');
+
+  console.log('\n== Notificaciones (RF-NOT) ==');
+  const nt = await request('GET', '/api/notifications', adminToken);
+  assert(nt.status === 200 && Array.isArray(nt.body.notifications), 'listar notificaciones del admin');
+
+  console.log('\n== Plantillas de correo (RF-CON-004) ==');
+  const tpls = await request('GET', '/api/templates', adminToken);
+  assert(tpls.status === 200 && (tpls.body.templates || []).length > 0, 'listar plantillas');
+  const tplUpd = await request('PUT', '/api/templates/invitation', adminToken, { subject: 'Invitación (test)', body: 'Hola {{name}}' });
+  assert(tplUpd.status === 200, 'editar plantilla');
+
   console.log('\n== Auditoría (RF-AUD) ==');
   r = await request('GET', '/api/audit', clientToken);
   assert(r.status === 403, 'cliente no accede a auditoría (RF-AUD-003)');
@@ -195,10 +244,12 @@ async function main(): Promise<void> {
   // Limpieza
   await pool.query('DELETE FROM time_entries');
   await pool.query('DELETE FROM timers');
+  await pool.query('DELETE FROM notifications');
   await pool.query('DELETE FROM appointments');
   await pool.query('DELETE FROM updates');
   await pool.query('DELETE FROM activities');
   await pool.query('DELETE FROM projects');
+  await pool.query('DELETE FROM files');
   await pool.query('DELETE FROM users');
   await pool.query('DELETE FROM clients');
   await pool.end();
