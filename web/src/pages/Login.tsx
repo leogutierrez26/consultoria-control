@@ -38,7 +38,7 @@ export default function Login() {
   async function doSet(e: React.FormEvent) {
     e.preventDefault(); setLoading(true); setMsg(null);
     try {
-      await api.post('/auth/set-password', { token, next });
+      await api.post('/users/set-password', { token, next });
       setMsg({ t: 'ok', m: 'Contraseña establecida. Inicie sesión.' });
       setTimeout(() => { window.location.href = '/login'; }, 1200);
     } catch (err: any) { setMsg({ t: 'err', m: err.message }); }

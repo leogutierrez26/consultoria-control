@@ -67,7 +67,7 @@ const swaggerSpec = swaggerJsdoc({
     openapi: '3.0.0',
     info: {
       title: 'Consultoría Control API',
-      version: '1.1.0',
+      version: '1.2.0',
       description:
         'API REST documentada de Consultoría Control (gestión de consultoría, proyectos, actividades, agenda, horas, comunicaciones y reportes).'
     },

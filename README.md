@@ -3,7 +3,13 @@
 Plataforma web para la gestión de consultoría, proyectos, actividades, agenda,
 reservas, horas, comunicaciones, reportes y auditoría.
 
-**Versión:** 1.1 · **Stack:** TypeScript (frontend y backend), Node.js, PostgreSQL, Docker.
+**Versión:** 1.2 · **Stack:** TypeScript (frontend y backend), Node.js, PostgreSQL, Docker.
+
+## Novedades 1.2
+
+- Nuevo Centro de Trabajo para priorizar actividades, citas, bloqueos y proyectos en riesgo.
+- Panel cliente ampliado con actividades abiertas, próximas citas, progreso y actualizaciones recientes.
+- Corrección del flujo de invitación para establecer contraseña desde el portal.
 
 Cumple con la especificación `Requerimientos_Funcionales_Sistema_Consultoria_v1.1.md`
 (MVP de prioridad alta, sección 12.1).

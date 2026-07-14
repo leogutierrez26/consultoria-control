@@ -42,12 +42,12 @@ router.get(
     if (rid) {
       // Panel cliente
       const projects = await query(
-        `SELECT id, name, status, progress, visible_to_client FROM projects
+        `SELECT id, code, name, status, progress, priority, estimated_end_date, visible_to_client FROM projects
          WHERE client_id = $1 AND visible_to_client = true ORDER BY created_at DESC`,
         [rid]
       );
       const upcoming = await query(
-        `SELECT id, start_time, status, modality FROM appointments
+        `SELECT id, start_time, end_time, status, modality, reason FROM appointments
          WHERE client_id = $1 AND start_time >= NOW() ORDER BY start_time LIMIT 5`,
         [rid]
       );
@@ -55,11 +55,36 @@ router.get(
         `SELECT COALESCE(SUM(duration_minutes),0) AS min FROM time_entries WHERE client_id = $1`,
         [rid]
       );
+      const openActivities = await query(
+        `SELECT a.id, a.title, a.status, a.priority, a.due_date, a.progress, p.name AS project_name
+         FROM activities a JOIN projects p ON p.id = a.project_id
+         WHERE p.client_id = $1 AND p.visible_to_client = true AND a.visible_to_client = true
+           AND a.status NOT IN ('finalizada','cancelada')
+         ORDER BY
+           CASE WHEN a.due_date IS NOT NULL AND a.due_date < CURRENT_DATE THEN 0 ELSE 1 END,
+           a.due_date NULLS LAST,
+           a.created_at DESC
+         LIMIT 8`,
+        [rid]
+      );
+      const recentUpdates = await query(
+        `SELECT u.id, u.activity_id, u.type, u.content, u.created_at, a.title AS activity_title, p.name AS project_name
+         FROM updates u
+         JOIN activities a ON a.id = u.activity_id
+         JOIN projects p ON p.id = a.project_id
+         WHERE p.client_id = $1 AND p.visible_to_client = true AND a.visible_to_client = true
+           AND u.visibility <> 'privada'
+         ORDER BY u.created_at DESC
+         LIMIT 6`,
+        [rid]
+      );
       res.json({
         role: 'client',
         projects: projects.rows,
         upcoming_appointments: upcoming.rows,
-        hours_consumed: +(parseInt(hours.rows[0]?.min || '0') / 60).toFixed(2)
+        hours_consumed: +(parseInt(hours.rows[0]?.min || '0') / 60).toFixed(2),
+        open_activities: openActivities.rows,
+        recent_updates: recentUpdates.rows
       });
     } else {
       // Panel admin
@@ -78,6 +103,54 @@ router.get(
       const overdue = await query("SELECT COUNT(*) FROM activities WHERE due_date < CURRENT_DATE AND status <> 'finalizada'");
       const pendingAppts = await query("SELECT COUNT(*) FROM appointments WHERE status = 'pendiente'");
       const timer = await query('SELECT id FROM timers WHERE user_id = $1', [uid]);
+      const dueActivities = await query(
+        `SELECT a.id, a.title, a.status, a.priority, a.due_date, a.progress,
+                p.name AS project_name, c.legal_name AS client_name
+         FROM activities a
+         JOIN projects p ON p.id = a.project_id
+         JOIN clients c ON c.id = p.client_id
+         WHERE a.status NOT IN ('finalizada','cancelada')
+           AND (a.due_date IS NULL OR a.due_date <= CURRENT_DATE + INTERVAL '7 days')
+         ORDER BY
+           CASE WHEN a.due_date IS NULL THEN 2 WHEN a.due_date < CURRENT_DATE THEN 0 ELSE 1 END,
+           a.due_date NULLS LAST,
+           CASE a.priority WHEN 'alta' THEN 0 WHEN 'media' THEN 1 ELSE 2 END,
+           a.created_at DESC
+         LIMIT 10`
+      );
+      const upcomingAppointments = await query(
+        `SELECT a.id, a.start_time, a.end_time, a.status, a.modality, a.reason, c.legal_name AS client_name
+         FROM appointments a
+         JOIN clients c ON c.id = a.client_id
+         WHERE a.start_time >= NOW()
+           AND a.status NOT IN ('cancelada_cliente','cancelada_admin','rechazada','atendida')
+         ORDER BY a.start_time
+         LIMIT 8`
+      );
+      const blockedActivities = await query(
+        `SELECT a.id, a.title, a.status, a.due_date, p.name AS project_name, c.legal_name AS client_name
+         FROM activities a
+         JOIN projects p ON p.id = a.project_id
+         JOIN clients c ON c.id = p.client_id
+         WHERE a.status IN ('bloqueada','esperando_info')
+         ORDER BY a.updated_at DESC
+         LIMIT 8`
+      );
+      const projectRisks = await query(
+        `SELECT p.id, p.name, p.code, p.status, p.progress, p.hour_budget, c.legal_name AS client_name,
+                COALESCE(SUM(t.duration_minutes),0) AS consumed_minutes
+         FROM projects p
+         JOIN clients c ON c.id = p.client_id
+         LEFT JOIN time_entries t ON t.project_id = p.id
+         WHERE p.status IN ('pendiente','en_ejecucion','suspendido')
+         GROUP BY p.id, c.legal_name
+         HAVING (p.hour_budget IS NOT NULL AND p.hour_budget > 0 AND COALESCE(SUM(t.duration_minutes),0) / 60.0 >= p.hour_budget * 0.8)
+            OR p.status = 'suspendido'
+         ORDER BY
+           CASE WHEN p.status = 'suspendido' THEN 0 ELSE 1 END,
+           COALESCE(SUM(t.duration_minutes),0) DESC
+         LIMIT 8`
+      );
       res.json({
         role: 'admin',
         hours_today: +(parseInt(todayMin.rows[0].min) / 60).toFixed(2),
@@ -87,7 +160,11 @@ router.get(
         active_projects: parseInt(activeProjects.rows[0].count),
         overdue_activities: parseInt(overdue.rows[0].count),
         pending_appointments: parseInt(pendingAppts.rows[0].count),
-        active_timer: timer.rows[0] || null
+        active_timer: timer.rows[0] || null,
+        due_activities: dueActivities.rows,
+        upcoming_appointments: upcomingAppointments.rows,
+        blocked_activities: blockedActivities.rows,
+        project_risks: projectRisks.rows
       });
     }
   })
