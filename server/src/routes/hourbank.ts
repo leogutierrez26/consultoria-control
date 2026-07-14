@@ -28,12 +28,19 @@ router.get(
   requireAdmin,
   asyncHandler(async (req, res) => {
     const c = await query('SELECT * FROM clients WHERE id = $1', [req.params.clientId]);
-    const used = await query('SELECT COALESCE(SUM(duration_minutes),0) AS min FROM time_entries WHERE client_id = $1', [req.params.clientId]);
+    if (!c.rows[0]) return res.status(404).json({ error: 'Cliente no encontrado' });
+    const vals: any[] = [req.params.clientId];
+    const filters = ['client_id = $1'];
+    if (c.rows[0].hour_bank_start) { filters.push(`work_date >= $${vals.length + 1}`); vals.push(c.rows[0].hour_bank_start); }
+    if (c.rows[0].hour_bank_end) { filters.push(`work_date <= $${vals.length + 1}`); vals.push(c.rows[0].hour_bank_end); }
+    const used = await query(`SELECT COALESCE(SUM(duration_minutes),0) AS min FROM time_entries WHERE ${filters.join(' AND ')}`, vals);
     const consumedMin = parseInt(used.rows[0].min || '0', 10);
     const contractedMin = parseFloat(c.rows[0].hour_bank_contracted || '0') * 60;
     res.json({
       enabled: c.rows[0].hour_bank_enabled,
       contracted_hours: c.rows[0].hour_bank_contracted,
+      start: c.rows[0].hour_bank_start,
+      end: c.rows[0].hour_bank_end,
       consumed_hours: +(consumedMin / 60).toFixed(2),
       available_hours: +Math.max(0, (contractedMin - consumedMin) / 60).toFixed(2),
       pct_consumed: contractedMin > 0 ? +((consumedMin / contractedMin) * 100).toFixed(1) : 0

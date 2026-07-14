@@ -131,10 +131,23 @@ router.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     const rid = currentClientId(req);
-    const sql = rid
-      ? 'SELECT * FROM appointments WHERE client_id = $1 ORDER BY start_time DESC'
-      : 'SELECT * FROM appointments ORDER BY start_time DESC';
-    const r = await query(sql, rid ? [rid] : []);
+    const { client_id, project_id, status, from, to } = req.query as any;
+    const filters: string[] = [];
+    const vals: any[] = [];
+    let i = 1;
+    if (rid) { filters.push(`a.client_id = $${i++}`); vals.push(rid); }
+    else if (client_id) { filters.push(`a.client_id = $${i++}`); vals.push(client_id); }
+    if (project_id) { filters.push(`a.project_id = $${i++}`); vals.push(project_id); }
+    if (status) { filters.push(`a.status = $${i++}`); vals.push(status); }
+    if (from) { filters.push(`a.start_time >= $${i++}`); vals.push(`${from}T00:00:00`); }
+    if (to) { filters.push(`a.start_time <= $${i++}`); vals.push(`${to}T23:59:59`); }
+    let sql = `SELECT a.*, c.legal_name AS client_name, p.name AS project_name
+               FROM appointments a
+               JOIN clients c ON c.id = a.client_id
+               LEFT JOIN projects p ON p.id = a.project_id`;
+    if (filters.length) sql += ' WHERE ' + filters.join(' AND ');
+    sql += ' ORDER BY a.start_time DESC';
+    const r = await query(sql, vals);
     res.json({ appointments: r.rows });
   })
 );

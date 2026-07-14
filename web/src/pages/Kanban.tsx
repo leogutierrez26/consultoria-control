@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useSession } from '../App';
 
@@ -7,40 +7,56 @@ const STATES = ['pendiente', 'programada', 'en_ejecucion', 'esperando_info', 'bl
 export default function Kanban() {
   const { token } = useSession();
   const [acts, setActs] = useState<any[]>([]);
-  const [proj, setProj] = useState('');
+  const [projects, setProjects] = useState<any[]>([]);
+  const [projectId, setProjectId] = useState('');
 
   async function load() {
-    const q = proj ? `?project_id=${proj}` : '';
-    const r: any = await api.get(`/activities${q}`, token);
-    setActs(r.activities || []);
+    const q = projectId ? `?project_id=${projectId}` : '';
+    const [a, p]: any[] = await Promise.all([api.get(`/activities${q}`, token), api.get('/projects', token)]);
+    setActs(a.activities || []);
+    setProjects(p.projects || []);
   }
-  useEffect(() => { load(); }, [token, proj]);
+  useEffect(() => { load(); }, [token, projectId]);
 
   async function move(id: string, status: string) {
     await api.patch(`/activities/${id}`, { status }, token);
     setActs(acts.map((a) => a.id === id ? { ...a, status } : a));
   }
 
+  const counts = useMemo(() => STATES.reduce((acc: Record<string, number>, state) => {
+    acc[state] = acts.filter((a) => a.status === state).length;
+    return acc;
+  }, {}), [acts]);
+
   return (
     <div>
-      <div className="row"><h2>Tablero (Kanban)</h2><span className="spacer" />
-        <input placeholder="filtrar project_id" value={proj} onChange={(e) => setProj(e.target.value)} style={{ maxWidth: 300 }} /></div>
-      <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 10 }}>
-        {STATES.map((s) => (
-          <div key={s} className="card" style={{ minWidth: 200, flex: 1 }}>
-            <strong style={{ textTransform: 'capitalize' }}>{s.replace('_', ' ')}</strong>
-            <div style={{ marginTop: 8 }}>
-              {acts.filter((a) => a.status === s).map((a) => (
-                <div key={a.id} className="card" style={{ marginBottom: 6, background: '#0b1220', padding: 8 }}>
-                  <div>{a.title}</div>
-                  <select value={a.status} onChange={(e) => move(a.id, e.target.value)} style={{ marginTop: 6, fontSize: 12 }}>
-                    {STATES.map((st) => <option key={st} value={st}>{st.replace('_', ' ')}</option>)}
+      <div className="page-head">
+        <div><p className="eyebrow">Flujo de trabajo</p><h2>Tablero de actividades</h2></div>
+        <select value={projectId} onChange={(e) => setProjectId(e.target.value)} style={{ maxWidth: 320 }}>
+          <option value="">Todos los proyectos</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </div>
+      <div className="kanban-board">
+        {STATES.map((state) => (
+          <section key={state} className="kanban-column">
+            <div className="section-title"><strong>{state.replace('_', ' ')}</strong><span>{counts[state] || 0}</span></div>
+            <div className="kanban-list">
+              {acts.filter((a) => a.status === state).map((a) => (
+                <article key={a.id} className="kanban-card">
+                  <b>{a.title}</b>
+                  <small>{a.client_name || 'Sin cliente'} · {a.project_name || 'Sin proyecto'}</small>
+                  <div className="row wrap">
+                    <span className={`badge ${a.priority === 'alta' ? 'err' : a.priority === 'media' ? 'warn' : ''}`}>{a.priority}</span>
+                    <span className="badge">{a.progress}%</span>
+                  </div>
+                  <select value={a.status} onChange={(e) => move(a.id, e.target.value)}>
+                    {STATES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
                   </select>
-                </div>
+                </article>
               ))}
-              {acts.filter((a) => a.status === s).length === 0 && <small className="msg">—</small>}
+              {counts[state] === 0 && <div className="empty">Sin actividades</div>}
             </div>
-          </div>
+          </section>
         ))}
       </div>
     </div>

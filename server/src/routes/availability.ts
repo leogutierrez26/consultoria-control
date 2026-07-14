@@ -44,6 +44,18 @@ router.get(
   })
 );
 
+router.post(
+  '/:id/delete',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const old = await query('SELECT * FROM availability WHERE id = $1', [req.params.id]);
+    if (!old.rows[0]) return res.status(404).json({ error: 'No encontrada' });
+    await query('DELETE FROM availability WHERE id = $1', [req.params.id]);
+    audit({ user_id: (req as any).user.uid, action: 'delete', entity: 'availability', entity_id: req.params.id, old_values: old.rows[0] });
+    res.json({ ok: true });
+  })
+);
+
 // RF-CIT-001 Consultar espacios disponibles (cliente). No revela eventos privados (RN-008).
 router.get(
   '/slots',
@@ -64,7 +76,7 @@ router.get(
     const booked = await query(
       `SELECT start_time, end_time FROM appointments
        WHERE status IN ('confirmada','pendiente','reprogramada')
-         AND start_time >= $1 AND start_time <= $2`,
+         AND start_time >= $1::date AND start_time < ($2::date + interval '1 day')`,
       [from, to]
     );
 
@@ -82,10 +94,11 @@ router.get(
         const endTs = combine(day, end);
         while (cursor + dur * 60000 <= endTs) {
           const slotEnd = cursor + dur * 60000;
+          const tooSoon = cursor < Date.now() + Number(a.min_anticipation_hours || 0) * 3600000;
           const conflict = bookedIntervals.some(
             (b) => cursor < b.e.getTime() && slotEnd > b.s.getTime()
           );
-          if (!conflict) {
+          if (!tooSoon && !conflict) {
             slots.push({ start: new Date(cursor).toISOString(), end: new Date(slotEnd).toISOString(), duration_min: dur });
           }
           cursor += dur * 60000;
