@@ -6,14 +6,23 @@ import { query } from '../db';
 
 const router = Router();
 
-async function getHoursData(rid: string | null, from?: string, to?: string, client_id?: string) {
+async function getHoursData(
+  rid: string | null,
+  from?: string,
+  to?: string,
+  client_id?: string,
+  project_id?: string,
+  billable?: string
+) {
   const filters: string[] = [];
   const vals: any[] = [];
   let i = 1;
   if (rid) { filters.push(`t.client_id = $${i++}`); vals.push(rid); }
   else if (client_id) { filters.push(`t.client_id = $${i++}`); vals.push(client_id); }
+  if (project_id) { filters.push(`t.project_id = $${i++}`); vals.push(project_id); }
   if (from) { filters.push(`t.work_date >= $${i++}`); vals.push(from); }
   if (to) { filters.push(`t.work_date <= $${i++}`); vals.push(to); }
+  if (billable === 'true' || billable === 'false') { filters.push(`t.billable = $${i++}`); vals.push(billable === 'true'); }
   let sql = `SELECT t.work_date, c.legal_name AS client, p.name AS project, t.description, t.duration_minutes, t.billable
              FROM time_entries t JOIN clients c ON c.id=t.client_id JOIN projects p ON p.id=t.project_id`;
   if (filters.length) sql += ' WHERE ' + filters.join(' AND ');
@@ -26,7 +35,8 @@ async function getActivityServiceRows(
   rid: string | null,
   from?: string,
   to?: string,
-  client_id?: string
+  client_id?: string,
+  billable?: string
 ) {
   const filters: string[] = [];
   const vals: any[] = [];
@@ -46,6 +56,10 @@ async function getActivityServiceRows(
   if (to) {
     filters.push(`COALESCE(h.last_work_date, a.due_date, a.start_date, a.created_at::date) <= $${i++}`);
     vals.push(to);
+  }
+  if (billable === 'true' || billable === 'false') {
+    filters.push(`a.billable = $${i++}`);
+    vals.push(billable === 'true');
   }
 
   let sql = `SELECT
@@ -143,7 +157,14 @@ router.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     const rid = currentClientId(req);
-    const rows = await getHoursData(rid, req.query.from as string, req.query.to as string, req.query.client_id as string);
+    const rows = await getHoursData(
+      rid,
+      req.query.from as string,
+      req.query.to as string,
+      req.query.client_id as string,
+      req.query.project_id as string,
+      req.query.billable as string
+    );
     const header = ['fecha', 'cliente', 'proyecto', 'descripcion', 'minutos', 'facturable'];
     const lines = [header.join(',')];
     for (const r of rows) {
@@ -164,7 +185,14 @@ router.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     const rid = currentClientId(req);
-    const rows = await getHoursData(rid, req.query.from as string, req.query.to as string, req.query.client_id as string);
+    const rows = await getHoursData(
+      rid,
+      req.query.from as string,
+      req.query.to as string,
+      req.query.client_id as string,
+      req.query.project_id as string,
+      req.query.billable as string
+    );
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Horas');
     ws.columns = [
@@ -190,7 +218,8 @@ router.get(
       rid,
       req.query.from as string,
       req.query.to as string,
-      req.query.client_id as string
+      req.query.client_id as string,
+      req.query.billable as string
     );
     const clientInfo = await getReportClientInfo(rid, req.query.client_id as string, rows);
     const defaultRate = Number(req.query.rate || 120000);
@@ -389,7 +418,14 @@ router.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     const rid = currentClientId(req);
-    const rows = await getHoursData(rid, req.query.from as string, req.query.to as string, req.query.client_id as string);
+    const rows = await getHoursData(
+      rid,
+      req.query.from as string,
+      req.query.to as string,
+      req.query.client_id as string,
+      req.query.project_id as string,
+      req.query.billable as string
+    );
     const lines = ['REPORTE DE HORAS - Consultoría Control', ''];
     for (const r of rows) {
       lines.push(`${r.work_date} | ${r.client} | ${r.project} | ${r.duration_minutes} min | ${r.billable ? 'Facturable' : 'No facturable'}`);

@@ -314,6 +314,48 @@ label { display: block; margin-top: 12px; font-size: .82rem; color: var(--muted)
   line-height: 1.35;
 }
 
+/* ===== Reportes ===== */
+.report-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 16px;
+  align-items: stretch;
+}
+.report-filters, .export-card { margin-bottom: 16px; }
+.report-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.report-context span {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(12, 20, 36, .72);
+  color: var(--muted);
+  font-size: .78rem;
+  font-weight: 700;
+}
+.export-actions {
+  display: grid;
+  gap: 10px;
+}
+.export-actions button {
+  width: 100%;
+}
+.report-stats {
+  margin: 2px 0 16px;
+}
+.report-panels {
+  align-items: start;
+}
+.table-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: .82rem;
+}
+
 /* ===== Tablas ===== */
 table { width: 100%; border-collapse: collapse; margin-top: 4px; }
 th, td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--border); font-size: .88rem; }
@@ -414,6 +456,7 @@ input[type="checkbox"] {
   .grid.cols-4 { grid-template-columns: repeat(2, 1fr); }
   .grid.cols-3 { grid-template-columns: 1fr 1fr; }
   .work-grid { grid-template-columns: 1fr; }
+  .report-layout { grid-template-columns: 1fr; }
   .work-card.primary { grid-row: auto; }
 }
 @media (max-width: 760px) {
