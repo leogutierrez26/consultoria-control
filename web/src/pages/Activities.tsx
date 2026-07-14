@@ -15,6 +15,7 @@ export default function Activities() {
   const [show, setShow] = useState(false);
   const [detail, setDetail] = useState<any>(null);
   const [editing, setEditing] = useState<any>(null);
+  const [loggingHours, setLoggingHours] = useState<any>(null);
   const [f, setF] = useState({ client_id: '', project_id: projectFilter || '', title: '', description: '', status: 'pendiente', billable: true, visible_to_client: true });
   const [editF, setEditF] = useState({
     client_id: '',
@@ -31,7 +32,14 @@ export default function Activities() {
     billable: true,
     visible_to_client: true
   });
+  const [hoursF, setHoursF] = useState({ client_id: '', project_id: '', work_date: '', duration_minutes: '60', description: '', billable: true });
   const [msg, setMsg] = useState('');
+
+  function todayISO() {
+    const d = new Date();
+    const offset = d.getTimezoneOffset();
+    return new Date(d.getTime() - offset * 60000).toISOString().slice(0, 10);
+  }
 
   async function load() {
     const q = projectFilter ? `?project_id=${projectFilter}` : '';
@@ -107,6 +115,49 @@ export default function Activities() {
     return projects.find((p) => p.id === projectId)?.client_id || '';
   }
 
+  function projectsForClient(clientId: string) {
+    return projects.filter((p) => !clientId || p.client_id === clientId);
+  }
+
+  function startLogHours(a: any) {
+    const activityClient = a.effective_client_id || a.client_id || projectClientId(a.project_id || '');
+    const project_id = a.project_id || '';
+    const client_id = activityClient || projectClientId(project_id);
+    setMsg('');
+    setLoggingHours(a);
+    setHoursF({
+      client_id,
+      project_id,
+      work_date: todayISO(),
+      duration_minutes: a.estimated_hours ? String(Math.round(Number(a.estimated_hours) * 60)) : '60',
+      description: a.description || a.title || '',
+      billable: a.billable !== false
+    });
+  }
+
+  async function saveHours(e: React.FormEvent) {
+    e.preventDefault();
+    setMsg('');
+    const project_id = hoursF.project_id;
+    const client_id = hoursF.client_id || projectClientId(project_id);
+    if (!project_id) { setMsg('Selecciona un proyecto para registrar las horas de la actividad.'); return; }
+    if (!client_id) { setMsg('Selecciona un cliente o un proyecto con cliente asociado.'); return; }
+    try {
+      await api.post('/hours', {
+        client_id,
+        project_id,
+        activity_id: loggingHours.id,
+        work_date: hoursF.work_date,
+        duration_minutes: Number(hoursF.duration_minutes),
+        description: hoursF.description || loggingHours.title,
+        billable: hoursF.billable
+      }, token);
+      setLoggingHours(null);
+      setMsg('Horas registradas en la actividad.');
+      await load();
+    } catch (err: any) { setMsg(err.message); }
+  }
+
   async function removeActivity(a: any) {
     if (!window.confirm(`¿Eliminar completamente la actividad "${a.title}"? También se borrarán sus subtareas, seguimientos y archivos asociados.`)) return;
     setMsg('');
@@ -120,6 +171,7 @@ export default function Activities() {
     <div>
       <div className="row"><h2>Actividades</h2><span className="spacer" />
         {user?.role === 'admin' && <button onClick={() => setShow(!show)}>Nueva actividad</button>}</div>
+      {msg && !editing && !loggingHours && <div className={`msg ${msg.includes('registradas') ? 'ok' : 'err'}`}>{msg}</div>}
       {show && (
         <form className="card" onSubmit={create}>
           <div className="grid cols-2">
@@ -152,6 +204,7 @@ export default function Activities() {
                 <button className="ghost" onClick={() => openDetail(a)}>Ver</button>
                 {user?.role === 'admin' && <>
                   <button className="ghost" onClick={() => startEdit(a)}>Editar</button>
+                  <button className="ghost" onClick={() => startLogHours(a)}>Tomar horas</button>
                   <button className="ghost" onClick={() => finalize(a.id, 'finalize')}>Finalizar</button>
                   <button className="ghost" onClick={() => finalize(a.id, 'reopen')}>Reabrir</button>
                   <button className="danger" onClick={() => removeActivity(a)}>Eliminar</button>
@@ -212,6 +265,42 @@ export default function Activities() {
             <div className="row" style={{ marginTop: 12 }}>
               <button>Guardar cambios</button>
               <button type="button" className="ghost" onClick={() => setEditing(null)}>Cancelar</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {loggingHours && (
+        <div className="modal-back" onClick={() => setLoggingHours(null)}>
+          <form className="modal" onSubmit={saveHours} onClick={(e) => e.stopPropagation()}>
+            <div className="row">
+              <h2>Tomar horas</h2>
+              <span className="spacer" />
+              <button type="button" className="ghost" onClick={() => setLoggingHours(null)}>Cerrar</button>
+            </div>
+            <p className="muted">{loggingHours.title}</p>
+            <div className="grid cols-2">
+              <div><label>Cliente</label><select value={hoursF.client_id} onChange={(e) => {
+                const client_id = e.target.value;
+                setHoursF({ ...hoursF, client_id, project_id: projectsForClient(client_id).some((p) => p.id === hoursF.project_id) ? hoursF.project_id : '' });
+              }} required>
+                <option value="">Selecciona cliente</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.legal_name}</option>)}
+              </select></div>
+              <div><label>Proyecto</label><select value={hoursF.project_id} onChange={(e) => {
+                const project_id = e.target.value;
+                setHoursF({ ...hoursF, project_id, client_id: project_id ? projectClientId(project_id) : hoursF.client_id });
+              }} required>
+                <option value="">Selecciona proyecto</option>{projectsForClient(hoursF.client_id).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select></div>
+              <div><label>Fecha</label><input type="date" value={hoursF.work_date} onChange={(e) => setHoursF({ ...hoursF, work_date: e.target.value })} required /></div>
+              <div><label>Duración (minutos)</label><input type="number" min="1" value={hoursF.duration_minutes} onChange={(e) => setHoursF({ ...hoursF, duration_minutes: e.target.value })} required /></div>
+              <div className="check-field"><label><input type="checkbox" checked={hoursF.billable} onChange={(e) => setHoursF({ ...hoursF, billable: e.target.checked })} /> Facturable</label></div>
+              <div style={{ gridColumn: '1 / -1' }}><label>Descripción para el informe</label><textarea value={hoursF.description} onChange={(e) => setHoursF({ ...hoursF, description: e.target.value })} /></div>
+            </div>
+            {msg && <div className={`msg ${msg.includes('registradas') ? 'ok' : 'err'}`}>{msg}</div>}
+            <div className="row" style={{ marginTop: 12 }}>
+              <button>Registrar horas</button>
+              <button type="button" className="ghost" onClick={() => setLoggingHours(null)}>Cancelar</button>
             </div>
           </form>
         </div>

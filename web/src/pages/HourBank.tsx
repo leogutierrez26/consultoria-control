@@ -2,7 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { useSession } from '../App';
 
-const today = new Date().toISOString().slice(0, 10);
+function todayISO() {
+  const d = new Date();
+  const offset = d.getTimezoneOffset();
+  return new Date(d.getTime() - offset * 60000).toISOString().slice(0, 10);
+}
+
+const today = todayISO();
 
 function dateOnly(value?: string) {
   return value ? value.slice(0, 10) : '';
@@ -35,6 +41,7 @@ export default function HourBank() {
   const [subscriptions, setSubscriptions] = useState<any[]>([]);
   const [sel, setSel] = useState('');
   const [editing, setEditing] = useState<any>(null);
+  const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ ...emptyForm });
   const [msg, setMsg] = useState('');
 
@@ -61,12 +68,14 @@ export default function HourBank() {
   function startCreate() {
     setMsg('');
     setEditing(null);
+    setShowForm(true);
     setForm({ ...emptyForm, client_id: sel || clients[0]?.id || '' });
   }
 
   function startEdit(s: any) {
     setMsg('');
     setEditing(s);
+    setShowForm(true);
     setForm({
       client_id: s.client_id,
       name: s.name || 'Bolsa mensual',
@@ -91,6 +100,8 @@ export default function HourBank() {
       billing_day: Number(form.billing_day),
       end_date: form.end_date || null
     };
+    if (!payload.client_id) { setMsg('Selecciona un cliente para crear la bolsa.'); return; }
+    if (!payload.start_date) { setMsg('Selecciona la fecha de inicio de la bolsa.'); return; }
     try {
       if (editing) {
         await api.patch(`/hourbank/subscriptions/${editing.id}`, payload, token);
@@ -100,6 +111,7 @@ export default function HourBank() {
         setMsg('Suscripción creada.');
       }
       setEditing(null);
+      setShowForm(false);
       setForm({ ...emptyForm, client_id: sel || clients[0]?.id || '' });
       await load(sel);
     } catch (err: any) {
@@ -139,12 +151,12 @@ export default function HourBank() {
         <div className="stat"><div className="num">{money(totalMonthly)}</div><div className="lbl">Ingreso recurrente mensual</div></div>
       </div>
 
-      {msg && <div className={`msg ${msg.includes('No se') ? 'err' : 'ok'}`}>{msg}</div>}
+      {msg && <div className={`msg ${msg.includes('No se') || msg.includes('Selecciona') ? 'err' : 'ok'}`}>{msg}</div>}
 
-      <form className="card" onSubmit={save}>
+      {showForm && <form className="card" onSubmit={save}>
         <div className="section-title">
           <strong>{editing ? 'Modificar bolsa' : 'Crear bolsa'}</strong>
-          {editing && <button type="button" className="ghost" onClick={() => { setEditing(null); setForm({ ...emptyForm, client_id: sel || clients[0]?.id || '' }); }}>Cancelar edición</button>}
+          <button type="button" className="ghost" onClick={() => { setEditing(null); setShowForm(false); setForm({ ...emptyForm, client_id: sel || clients[0]?.id || '' }); }}>Cancelar</button>
         </div>
         <div className="grid cols-4">
           <div><label>Cliente</label><select value={form.client_id} onChange={(e) => setForm({ ...form, client_id: e.target.value })} required>
@@ -165,7 +177,7 @@ export default function HourBank() {
           <div style={{ gridColumn: '1 / -1' }}><label>Notas</label><textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
         </div>
         <button style={{ marginTop: 12 }}>{editing ? 'Guardar cambios' : 'Crear bolsa'}</button>
-      </form>
+      </form>}
 
       <section className="card">
         <div className="section-title"><strong>Contratos de bolsa</strong><span>{filtered.length} registros</span></div>
