@@ -44,6 +44,7 @@ export default function HourBank() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ ...emptyForm });
   const [msg, setMsg] = useState('');
+  const [loadingClients, setLoadingClients] = useState(true);
 
   const filtered = useMemo(
     () => sel ? subscriptions.filter((s) => s.client_id === sel) : subscriptions,
@@ -56,14 +57,32 @@ export default function HourBank() {
 
   async function load(clientId = sel) {
     const params = clientId ? `?client_id=${clientId}` : '';
-    const [c, h]: any[] = await Promise.all([
-      api.get('/clients', token),
-      api.get(`/hourbank${params}`, token)
-    ]);
-    setClients(c.clients || []);
-    setSubscriptions(h.subscriptions || []);
+    try {
+      setLoadingClients(true);
+      const c: any = await api.get('/clients', token);
+      const loadedClients = c.clients || [];
+      setClients(loadedClients);
+      if (!form.client_id && loadedClients.length > 0) {
+        setForm((current) => ({ ...current, client_id: sel || loadedClients[0].id }));
+      }
+    } catch (err: any) {
+      setMsg(err.message || 'No se pudieron cargar los clientes.');
+    } finally {
+      setLoadingClients(false);
+    }
+    try {
+      const h: any = await api.get(`/hourbank${params}`, token);
+      setSubscriptions(h.subscriptions || []);
+    } catch (err: any) {
+      setSubscriptions([]);
+      setMsg(err.message || 'No se pudieron cargar las bolsas de horas.');
+    }
   }
   useEffect(() => { load(); }, [token]);
+  useEffect(() => {
+    if (!showForm || form.client_id || clients.length === 0) return;
+    setForm((current) => ({ ...current, client_id: sel || clients[0].id }));
+  }, [clients, form.client_id, sel, showForm]);
 
   function startCreate() {
     setMsg('');
@@ -130,18 +149,20 @@ export default function HourBank() {
     <div>
       <div className="page-head">
         <div><p className="eyebrow">Contratos recurrentes</p><h2>Bolsas de horas mensuales</h2></div>
-        <button onClick={startCreate}>Nueva bolsa</button>
+        <button onClick={startCreate} disabled={loadingClients || clients.length === 0}>Nueva bolsa</button>
       </div>
 
       <section className="card">
         <strong>Cliente</strong>
         <div className="row wrap">
-          <select value={sel} onChange={(e) => { setSel(e.target.value); load(e.target.value); }}>
+          <select value={sel} onChange={(e) => { setSel(e.target.value); load(e.target.value); }} disabled={loadingClients}>
             <option value="">Todos los clientes</option>
             {clients.map((c) => <option key={c.id} value={c.id}>{c.legal_name}</option>)}
           </select>
           <button className="ghost" onClick={() => load(sel)}>Actualizar</button>
         </div>
+        {loadingClients && <p className="muted">Cargando clientes...</p>}
+        {!loadingClients && clients.length === 0 && <div className="msg err">No hay clientes disponibles. Crea primero un cliente para poder registrar una bolsa de horas.</div>}
       </section>
 
       <div className="grid cols-4" style={{ marginBottom: 16 }}>
@@ -159,8 +180,8 @@ export default function HourBank() {
           <button type="button" className="ghost" onClick={() => { setEditing(null); setShowForm(false); setForm({ ...emptyForm, client_id: sel || clients[0]?.id || '' }); }}>Cancelar</button>
         </div>
         <div className="grid cols-4">
-          <div><label>Cliente</label><select value={form.client_id} onChange={(e) => setForm({ ...form, client_id: e.target.value })} required>
-            <option value="">Selecciona</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.legal_name}</option>)}
+          <div><label>Cliente</label><select value={form.client_id} onChange={(e) => setForm({ ...form, client_id: e.target.value })} required disabled={loadingClients || clients.length === 0}>
+            <option value="">{loadingClients ? 'Cargando clientes...' : 'Selecciona cliente'}</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.legal_name}</option>)}
           </select></div>
           <div><label>Nombre del contrato</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
           <div><label>Horas incluidas/mes</label><input type="number" min={0} value={form.hours_included} onChange={(e) => setForm({ ...form, hours_included: Number(e.target.value) })} /></div>

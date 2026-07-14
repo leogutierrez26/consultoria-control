@@ -8,8 +8,13 @@ import { evaluateHourBank } from '../hourbank';
 
 const router = Router();
 
-function dateOnly(value?: string | null) {
-  return value ? String(value).slice(0, 10) : null;
+function dateOnly(value?: string | Date | null) {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const text = String(value);
+  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
 }
 
 async function usageFor(clientId: string, start?: string | null, end?: string | null) {
