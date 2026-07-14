@@ -23,8 +23,8 @@ export default function Hours() {
   const [clients, setClients] = useState<any[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
   const [filters, setFilters] = useState({ from: monthStart, to: today, client_id: '', project_id: '' });
-  const [form, setForm] = useState({ client_id: '', project_id: '', activity_id: '', work_date: today, duration_minutes: 60, description: '', billable: true });
-  const [timerForm, setTimerForm] = useState({ client_id: '', project_id: '', activity_id: '', description: '' });
+  const [form, setForm] = useState({ client_id: '', project_id: '', activity_id: '', work_date: today, duration_minutes: 60, description: '', billable: true, use_bank: false });
+  const [timerForm, setTimerForm] = useState({ client_id: '', project_id: '', activity_id: '', description: '', use_bank: false });
   const [timer, setTimer] = useState<any>(null);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState('');
@@ -35,12 +35,22 @@ export default function Hours() {
   }, [projects, form.client_id, filters.client_id, timerForm.client_id]);
 
   const formActivities = useMemo(
-    () => activities.filter((a) => !form.project_id || a.project_id === form.project_id),
-    [activities, form.project_id]
+    () => activities.filter((a) => {
+      const clientId = a.effective_client_id || a.client_id || normalizeProject(a.project_id || '');
+      const matchesClient = !form.client_id || clientId === form.client_id;
+      const matchesProject = !form.project_id || a.project_id === form.project_id || (!a.project_id && matchesClient);
+      return matchesClient && matchesProject;
+    }),
+    [activities, form.client_id, form.project_id, projects]
   );
   const timerActivities = useMemo(
-    () => activities.filter((a) => !timerForm.project_id || a.project_id === timerForm.project_id),
-    [activities, timerForm.project_id]
+    () => activities.filter((a) => {
+      const clientId = a.effective_client_id || a.client_id || normalizeProject(a.project_id || '');
+      const matchesClient = !timerForm.client_id || clientId === timerForm.client_id;
+      const matchesProject = !timerForm.project_id || a.project_id === timerForm.project_id || (!a.project_id && matchesClient);
+      return matchesClient && matchesProject;
+    }),
+    [activities, timerForm.client_id, timerForm.project_id, projects]
   );
 
   async function load() {
@@ -82,6 +92,16 @@ export default function Hours() {
     return project ? project.client_id : '';
   }
 
+  function activityClientId(activityId: string) {
+    const activity = activities.find((a) => a.id === activityId);
+    return activity ? (activity.effective_client_id || activity.client_id || normalizeProject(activity.project_id || '')) : '';
+  }
+
+  function activityProjectId(activityId: string) {
+    const activity = activities.find((a) => a.id === activityId);
+    return activity?.project_id || '';
+  }
+
   async function add(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -93,10 +113,10 @@ export default function Hours() {
       activity_id: form.activity_id || null,
       work_date: form.work_date,
       duration_minutes: Number(form.duration_minutes),
-      description: form.description,
-      billable: form.billable
+      description: form.use_bank ? `Bolsa de horas - ${form.description || 'Trabajo en actividad'}` : form.description,
+      billable: form.use_bank ? true : form.billable
     }, token);
-    setForm({ client_id: '', project_id: '', activity_id: '', work_date: today, duration_minutes: 60, description: '', billable: true });
+    setForm({ client_id: '', project_id: '', activity_id: '', work_date: today, duration_minutes: 60, description: '', billable: true, use_bank: false });
     await load();
   }
 
@@ -107,7 +127,7 @@ export default function Hours() {
       client_id: timerForm.client_id || normalizeProject(timerForm.project_id),
       project_id: timerForm.project_id,
       activity_id: timerForm.activity_id || null,
-      description: timerForm.description || 'Trabajo en consultoría'
+      description: timerForm.use_bank ? `Bolsa de horas - ${timerForm.description || 'Trabajo en consultoría'}` : (timerForm.description || 'Trabajo en consultoría')
     }, token);
     await load();
   }
@@ -158,11 +178,17 @@ export default function Hours() {
               <div><label>Proyecto</label><select value={form.project_id} onChange={(e) => setForm({ ...form, project_id: e.target.value, client_id: form.client_id || normalizeProject(e.target.value), activity_id: '' })}>
                 <option value="">Selecciona</option>{visibleProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select></div>
-              <div><label>Actividad</label><select value={form.activity_id} onChange={(e) => setForm({ ...form, activity_id: e.target.value })}>
+              <div><label>Actividad</label><select value={form.activity_id} onChange={(e) => {
+                const activity_id = e.target.value;
+                const project_id = activityProjectId(activity_id) || form.project_id;
+                const client_id = activityClientId(activity_id) || form.client_id || normalizeProject(project_id);
+                setForm({ ...form, activity_id, project_id, client_id, description: activities.find((a) => a.id === activity_id)?.title || form.description });
+              }}>
                 <option value="">Sin actividad</option>{formActivities.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
               </select></div>
               <div><label>Fecha</label><input type="date" value={form.work_date} onChange={(e) => setForm({ ...form, work_date: e.target.value })} /></div>
               <div><label>Duración (min)</label><input type="number" min={1} value={form.duration_minutes} onChange={(e) => setForm({ ...form, duration_minutes: Number(e.target.value) })} /></div>
+              <div className="check-field"><label><input type="checkbox" checked={form.use_bank} onChange={(e) => setForm({ ...form, use_bank: e.target.checked })} /> Usar bolsa de horas</label></div>
               <div className="check-field"><label><input type="checkbox" checked={form.billable} onChange={(e) => setForm({ ...form, billable: e.target.checked })} /> Facturable</label></div>
               <div style={{ gridColumn: '1 / -1' }}><label>Descripción</label><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
             </div>
@@ -180,9 +206,15 @@ export default function Hours() {
                 <div><label>Proyecto</label><select value={timerForm.project_id} onChange={(e) => setTimerForm({ ...timerForm, project_id: e.target.value, client_id: timerForm.client_id || normalizeProject(e.target.value), activity_id: '' })}>
                   <option value="">Selecciona</option>{visibleProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select></div>
-                <div><label>Actividad</label><select value={timerForm.activity_id} onChange={(e) => setTimerForm({ ...timerForm, activity_id: e.target.value })}>
+                <div><label>Actividad</label><select value={timerForm.activity_id} onChange={(e) => {
+                  const activity_id = e.target.value;
+                  const project_id = activityProjectId(activity_id) || timerForm.project_id;
+                  const client_id = activityClientId(activity_id) || timerForm.client_id || normalizeProject(project_id);
+                  setTimerForm({ ...timerForm, activity_id, project_id, client_id, description: activities.find((a) => a.id === activity_id)?.title || timerForm.description });
+                }}>
                   <option value="">Sin actividad</option>{timerActivities.map((a) => <option key={a.id} value={a.id}>{a.title}</option>)}
                 </select></div>
+                <div className="check-field"><label><input type="checkbox" checked={timerForm.use_bank} onChange={(e) => setTimerForm({ ...timerForm, use_bank: e.target.checked })} /> Usar bolsa de horas</label></div>
                 <div><label>Descripción</label><input value={timerForm.description} onChange={(e) => setTimerForm({ ...timerForm, description: e.target.value })} /></div>
               </div>
             )}

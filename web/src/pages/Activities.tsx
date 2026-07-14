@@ -32,7 +32,7 @@ export default function Activities() {
     billable: true,
     visible_to_client: true
   });
-  const [hoursF, setHoursF] = useState({ client_id: '', project_id: '', work_date: '', duration_minutes: '60', description: '', billable: true });
+  const [hoursF, setHoursF] = useState({ client_id: '', project_id: '', work_date: '', duration_minutes: '60', description: '', billable: true, use_bank: true });
   const [msg, setMsg] = useState('');
 
   function todayISO() {
@@ -131,7 +131,8 @@ export default function Activities() {
       work_date: todayISO(),
       duration_minutes: a.estimated_hours ? String(Math.round(Number(a.estimated_hours) * 60)) : '60',
       description: a.description || a.title || '',
-      billable: a.billable !== false
+      billable: a.billable !== false,
+      use_bank: true
     });
   }
 
@@ -149,8 +150,8 @@ export default function Activities() {
         activity_id: loggingHours.id,
         work_date: hoursF.work_date,
         duration_minutes: Number(hoursF.duration_minutes),
-        description: hoursF.description || loggingHours.title,
-        billable: hoursF.billable
+        description: hoursF.use_bank ? `Bolsa de horas - ${hoursF.description || loggingHours.title}` : (hoursF.description || loggingHours.title),
+        billable: hoursF.use_bank ? true : hoursF.billable
       }, token);
       setLoggingHours(null);
       setMsg('Horas registradas en la actividad.');
@@ -294,6 +295,7 @@ export default function Activities() {
               </select></div>
               <div><label>Fecha</label><input type="date" value={hoursF.work_date} onChange={(e) => setHoursF({ ...hoursF, work_date: e.target.value })} required /></div>
               <div><label>Duración (minutos)</label><input type="number" min="1" value={hoursF.duration_minutes} onChange={(e) => setHoursF({ ...hoursF, duration_minutes: e.target.value })} required /></div>
+              <div className="check-field"><label><input type="checkbox" checked={hoursF.use_bank} onChange={(e) => setHoursF({ ...hoursF, use_bank: e.target.checked })} /> Usar bolsa de horas</label></div>
               <div className="check-field"><label><input type="checkbox" checked={hoursF.billable} onChange={(e) => setHoursF({ ...hoursF, billable: e.target.checked })} /> Facturable</label></div>
               <div style={{ gridColumn: '1 / -1' }}><label>Descripción para el informe</label><textarea value={hoursF.description} onChange={(e) => setHoursF({ ...hoursF, description: e.target.value })} /></div>
             </div>

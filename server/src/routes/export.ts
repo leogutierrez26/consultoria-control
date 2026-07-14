@@ -73,6 +73,8 @@ async function getActivityServiceRows(
       p.name AS project_name,
       COALESCE(MAX(t.rate), MAX(p.hourly_rate), MAX(c.default_rate), 0) AS hourly_rate,
       SUM(t.duration_minutes) AS total_minutes,
+      COALESCE(SUM(CASE WHEN COALESCE(t.description,'') ILIKE 'Bolsa de horas -%' THEN t.duration_minutes ELSE 0 END),0) AS bank_minutes,
+      COALESCE(SUM(CASE WHEN COALESCE(t.description,'') NOT ILIKE 'Bolsa de horas -%' AND t.billable THEN t.duration_minutes ELSE 0 END),0) AS additional_minutes,
       MIN(t.work_date) AS first_work_date,
       MAX(t.work_date) AS last_work_date
     FROM time_entries t
@@ -370,11 +372,12 @@ router.get(
     }
 
     for (const source of rows as any[]) {
-      const quantity = Math.round((Number(source.total_minutes || 0) / 60) * 100) / 100;
-      if (!quantity) continue;
+      const bankQuantity = Math.round((Number(source.bank_minutes || 0) / 60) * 100) / 100;
+      const directAdditional = Math.round((Number(source.additional_minutes || 0) / 60) * 100) / 100;
+      if (!bankQuantity && !directAdditional) continue;
       const rate = Number(source.hourly_rate || defaultRate || 0);
       const date = excelSerialDate(source.last_work_date || source.first_work_date);
-      const included = bankEnabled ? Math.min(remainingBankHours, quantity) : 0;
+      const included = bankEnabled ? Math.min(remainingBankHours, bankQuantity) : 0;
       if (included > 0) {
         remainingBankHours = Math.max(0, remainingBankHours - included);
         reportLines.push({
@@ -390,10 +393,11 @@ router.get(
         });
       }
 
-      const additional = Math.round((quantity - included) * 100) / 100;
+      const bankExcess = Math.round((bankQuantity - included) * 100) / 100;
+      const additional = Math.round((directAdditional + bankExcess) * 100) / 100;
       if (additional > 0) {
         reportLines.push({
-          title: bankEnabled ? `${source.title} (excedente bolsa)` : source.title,
+          title: bankExcess > 0 ? `${source.title} (excedente bolsa)` : source.title,
           type: assistanceType,
           quantity: additional,
           costCenter: source.project_code || 'Servicios adicionales',
