@@ -25,6 +25,7 @@ export interface Client {
   city?: string;
   country?: string;
   default_rate: number;
+  hour_bank_monthly_fee?: number;
   status: string;
   internal_notes?: string;
 }

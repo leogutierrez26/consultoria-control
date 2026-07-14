@@ -11,11 +11,11 @@ router.put(
   '/:clientId',
   requireAdmin,
   asyncHandler(async (req, res) => {
-    const { enabled, contracted, start, end } = req.body;
+    const { enabled, contracted, monthly_fee, start, end } = req.body;
     await query(
-      `UPDATE clients SET hour_bank_enabled = $1, hour_bank_contracted = $2, hour_bank_start = $3, hour_bank_end = $4
-       WHERE id = $5`,
-      [!!enabled, contracted || 0, start || null, end || null, req.params.clientId]
+      `UPDATE clients SET hour_bank_enabled = $1, hour_bank_contracted = $2, hour_bank_monthly_fee = $3, hour_bank_start = $4, hour_bank_end = $5
+       WHERE id = $6`,
+      [!!enabled, contracted || 0, monthly_fee || 0, start || null, end || null, req.params.clientId]
     );
     await evaluateHourBank(req.params.clientId);
     res.json({ ok: true });
@@ -39,6 +39,7 @@ router.get(
     res.json({
       enabled: c.rows[0].hour_bank_enabled,
       contracted_hours: c.rows[0].hour_bank_contracted,
+      monthly_fee: c.rows[0].hour_bank_monthly_fee,
       start: c.rows[0].hour_bank_start,
       end: c.rows[0].hour_bank_end,
       consumed_hours: +(consumedMin / 60).toFixed(2),

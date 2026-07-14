@@ -42,23 +42,23 @@ async function getActivityServiceRows(
   const vals: any[] = [];
   let i = 1;
   if (rid) {
-    filters.push(`COALESCE(a.client_id, p.client_id) = $${i++}`);
+    filters.push(`t.client_id = $${i++}`);
     vals.push(rid);
     filters.push(`a.visible_to_client = true AND (p.id IS NULL OR p.visible_to_client = true)`);
   } else if (client_id) {
-    filters.push(`COALESCE(a.client_id, p.client_id) = $${i++}`);
+    filters.push(`t.client_id = $${i++}`);
     vals.push(client_id);
   }
   if (from) {
-    filters.push(`COALESCE(h.last_work_date, a.due_date, a.start_date, a.created_at::date) >= $${i++}`);
+    filters.push(`t.work_date >= $${i++}`);
     vals.push(from);
   }
   if (to) {
-    filters.push(`COALESCE(h.last_work_date, a.due_date, a.start_date, a.created_at::date) <= $${i++}`);
+    filters.push(`t.work_date <= $${i++}`);
     vals.push(to);
   }
   if (billable === 'true' || billable === 'false') {
-    filters.push(`a.billable = $${i++}`);
+    filters.push(`t.billable = $${i++}`);
     vals.push(billable === 'true');
   }
 
@@ -67,28 +67,22 @@ async function getActivityServiceRows(
       a.title,
       a.description,
       a.billable,
-      a.estimated_hours,
-      a.start_date,
-      a.due_date,
-      COALESCE(a.client_id, p.client_id) AS client_id,
+      t.client_id,
       c.legal_name AS client_name,
       p.code AS project_code,
       p.name AS project_name,
-      COALESCE(p.hourly_rate, c.default_rate, 0) AS hourly_rate,
-      h.total_minutes,
-      h.last_work_date
-    FROM activities a
-    LEFT JOIN projects p ON p.id = a.project_id
-    LEFT JOIN clients c ON c.id = COALESCE(a.client_id, p.client_id)
-    LEFT JOIN (
-      SELECT activity_id, SUM(duration_minutes) AS total_minutes, MAX(work_date) AS last_work_date
-      FROM time_entries
-      WHERE activity_id IS NOT NULL
-      GROUP BY activity_id
-    ) h ON h.activity_id = a.id
-    WHERE a.status <> 'cancelada'`;
+      COALESCE(MAX(t.rate), MAX(p.hourly_rate), MAX(c.default_rate), 0) AS hourly_rate,
+      SUM(t.duration_minutes) AS total_minutes,
+      MIN(t.work_date) AS first_work_date,
+      MAX(t.work_date) AS last_work_date
+    FROM time_entries t
+    JOIN activities a ON a.id = t.activity_id
+    LEFT JOIN projects p ON p.id = t.project_id
+    JOIN clients c ON c.id = t.client_id
+    WHERE t.activity_id IS NOT NULL AND a.status <> 'cancelada'`;
   if (filters.length) sql += ' AND ' + filters.join(' AND ');
-  sql += ` ORDER BY COALESCE(h.last_work_date, a.due_date, a.start_date, a.created_at::date), a.created_at`;
+  sql += ` GROUP BY a.id, t.client_id, c.legal_name, p.code, p.name
+           ORDER BY MAX(t.work_date), a.title`;
   const r = await query(sql, vals);
   return r.rows;
 }
@@ -97,7 +91,8 @@ async function getReportClientInfo(rid: string | null, client_id?: string, rows:
   const id = rid || client_id || null;
   if (id) {
     const r = await query(
-      `SELECT legal_name, client_type, id_type, id_number, contact_name, email, billing_email, phone, address, city, country, default_rate
+      `SELECT legal_name, client_type, id_type, id_number, contact_name, email, billing_email, phone, address, city, country,
+              default_rate, hour_bank_enabled, hour_bank_contracted, hour_bank_monthly_fee, hour_bank_start, hour_bank_end
        FROM clients WHERE id = $1`,
       [id]
     );
@@ -273,10 +268,12 @@ router.get(
     ws.getCell('G5').value = clientInfo.billing_email || clientInfo.email || 'N/A';
     ws.getCell('B6').value = 'Dirección';
     ws.getCell('C6').value = [clientInfo.address, clientInfo.city, clientInfo.country].filter(Boolean).join(', ') || 'N/A';
-    ws.getCell('F6').value = 'Tarifa base';
-    ws.getCell('G6').value = Number(clientInfo.default_rate || defaultRate || 0) || 'N/A';
-    ws.getCell('B7').value = 'Generado';
-    ws.getCell('C7').value = new Date();
+    ws.getCell('F6').value = 'Bolsa mensual';
+    ws.getCell('G6').value = clientInfo.hour_bank_enabled ? Number(clientInfo.hour_bank_monthly_fee || 0) : 'N/A';
+    ws.getCell('B7').value = 'Horas bolsa';
+    ws.getCell('C7').value = clientInfo.hour_bank_enabled ? Number(clientInfo.hour_bank_contracted || 0) : 'N/A';
+    ws.getCell('F7').value = 'Generado';
+    ws.getCell('G7').value = new Date();
     ws.mergeCells('C2:E2');
     ws.mergeCells('C3:E3');
     ws.mergeCells('C4:E4');
@@ -288,7 +285,8 @@ router.get(
     ws.mergeCells('G4:J4');
     ws.mergeCells('G5:J5');
     ws.mergeCells('G6:J6');
-    for (const cell of ['B2', 'F2', 'B3', 'F3', 'B4', 'F4', 'B5', 'F5', 'B6', 'F6', 'B7']) {
+    ws.mergeCells('G7:J7');
+    for (const cell of ['B2', 'F2', 'B3', 'F3', 'B4', 'F4', 'B5', 'F5', 'B6', 'F6', 'B7', 'F7']) {
       ws.getCell(cell).font = { name: 'Arial', size: 11, bold: true };
       ws.getCell(cell).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9EAF7' } };
     }
@@ -304,7 +302,8 @@ router.get(
       }
     }
     ws.getCell('G6').numFmt = '"$" #,##0;-"$" #,##0;"$" -';
-    ws.getCell('C7').numFmt = 'dd/mm/yyyy hh:mm';
+    ws.getCell('C7').numFmt = '0';
+    ws.getCell('G7').numFmt = 'dd/mm/yyyy hh:mm';
 
     const headerRow = 9;
     ws.getRow(headerRow).values = [
@@ -330,32 +329,87 @@ router.get(
     ws.getCell(`B${sectionRow}`).alignment = { horizontal: 'center', vertical: 'middle' };
     ws.getCell(`B${sectionRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFA6A6A6' } };
 
+    const bankEnabled = !!clientInfo.hour_bank_enabled && Number(clientInfo.hour_bank_contracted || 0) > 0;
+    const contractedHours = bankEnabled ? Number(clientInfo.hour_bank_contracted || 0) : 0;
+    const monthlyFee = bankEnabled ? Number(clientInfo.hour_bank_monthly_fee || 0) : 0;
+    let remainingBankHours = contractedHours;
+    const reportLines: any[] = [];
+
+    if (monthlyFee > 0) {
+      reportLines.push({
+        title: 'Suscripción mensual bolsa de horas',
+        type: 'Cargo recurrente',
+        quantity: 1,
+        costCenter: 'Bolsa de horas mensual',
+        date: from ? new Date(`${from}T00:00:00`) : new Date(),
+        unit: 'Mes',
+        rate: monthlyFee,
+        total: monthlyFee,
+        countsAsHour: false
+      });
+    }
+
+    for (const source of rows as any[]) {
+      const quantity = Math.round((Number(source.total_minutes || 0) / 60) * 100) / 100;
+      if (!quantity) continue;
+      const rate = Number(source.hourly_rate || defaultRate || 0);
+      const date = excelSerialDate(source.last_work_date || source.first_work_date);
+      const included = bankEnabled ? Math.min(remainingBankHours, quantity) : 0;
+      if (included > 0) {
+        remainingBankHours = Math.max(0, remainingBankHours - included);
+        reportLines.push({
+          title: `${source.title} (consumo bolsa de horas)`,
+          type: 'Bolsa mensual',
+          quantity: included,
+          costCenter: 'Bolsa de horas mensual',
+          date,
+          unit: 'Hora',
+          rate: 0,
+          total: 0,
+          countsAsHour: true
+        });
+      }
+
+      const additional = Math.round((quantity - included) * 100) / 100;
+      if (additional > 0) {
+        reportLines.push({
+          title: bankEnabled ? `${source.title} (excedente bolsa)` : source.title,
+          type: assistanceType,
+          quantity: additional,
+          costCenter: source.project_code || 'Servicios adicionales',
+          date,
+          unit: 'Hora',
+          rate,
+          total: additional * rate,
+          countsAsHour: true
+        });
+      }
+    }
+
     const firstDataRow = sectionRow + 1;
-    const dataRows = Math.max(rows.length, 1);
+    const dataRows = Math.max(reportLines.length, 1);
     let totalQuantity = 0;
     let totalServices = 0;
+    let totalAdditional = 0;
     for (let idx = 0; idx < dataRows; idx++) {
       const rowNumber = firstDataRow + idx;
-      const source: any = rows[idx];
-      const quantity = source
-        ? Math.round(((Number(source.total_minutes || 0) / 60) || Number(source.estimated_hours || 0)) * 100) / 100
-        : null;
-      const rate = source ? Number(source.hourly_rate || defaultRate || 0) : defaultRate;
-      if (source && quantity) {
-        totalQuantity += quantity;
-        totalServices += quantity * rate;
+      const source: any = reportLines[idx];
+      if (source) {
+        totalServices += source.total || 0;
+        if (source.countsAsHour) totalQuantity += source.quantity || 0;
+        if (source.unit === 'Hora' && source.total > 0) totalAdditional += source.total;
       }
       ws.getRow(rowNumber).values = [
         null,
         source ? idx + 1 : null,
-        source?.title || 'Sin actividades en el periodo seleccionado',
-        source ? assistanceType : null,
-        quantity || null,
-        source?.project_code || null,
-        excelSerialDate(source?.last_work_date || source?.due_date || source?.start_date),
-        source ? 'Hora' : null,
-        source ? rate : null,
-        source ? { formula: `E${rowNumber}*I${rowNumber}`, result: quantity ? quantity * rate : 0 } : null
+        source?.title || 'Sin actividades registradas en el periodo seleccionado',
+        source?.type || null,
+        source?.quantity || null,
+        source?.costCenter || null,
+        source?.date || null,
+        source?.unit || null,
+        source ? source.rate : null,
+        source ? { formula: `E${rowNumber}*I${rowNumber}`, result: source.total || 0 } : null
       ];
       ws.getRow(rowNumber).font = { name: 'Arial', size: 12 };
       ws.getCell(rowNumber, 3).alignment = { horizontal: 'left' };
@@ -368,17 +422,17 @@ router.get(
 
     ws.getCell(`D${totalQtyRow}`).value = 'Total cantidad';
     ws.getCell(`E${totalQtyRow}`).value = {
-      formula: `SUM(E${firstDataRow}:E${firstDataRow + dataRows - 1})`,
+      formula: `SUMIF(H${firstDataRow}:H${firstDataRow + dataRows - 1},"Hora",E${firstDataRow}:E${firstDataRow + dataRows - 1})`,
       result: totalQuantity
     };
-    ws.getCell(`B${subtotalRow}`).value = 'Subtotal Servicios';
+    ws.getCell(`B${subtotalRow}`).value = 'Subtotal actividades adicionales';
     ws.getCell(`H${subtotalRow}`).value = 'Hora';
     ws.getCell(`J${subtotalRow}`).value = {
-      formula: `SUM(J${firstDataRow}:J${firstDataRow + dataRows - 1})`,
-      result: totalServices
+      formula: `SUMIF(H${firstDataRow}:H${firstDataRow + dataRows - 1},"Hora",J${firstDataRow}:J${firstDataRow + dataRows - 1})`,
+      result: totalAdditional
     };
-    ws.getCell(`B${totalRow}`).value = 'Sumatoria Total Servicios';
-    ws.getCell(`J${totalRow}`).value = { formula: `J${subtotalRow}`, result: totalServices };
+    ws.getCell(`B${totalRow}`).value = 'Total bolsa mensual + adicionales';
+    ws.getCell(`J${totalRow}`).value = { formula: `SUM(J${firstDataRow}:J${firstDataRow + dataRows - 1})`, result: totalServices };
 
     for (const row of [totalQtyRow, subtotalRow, totalRow]) {
       ws.getCell(`B${row}`).font = { name: 'Arial', size: 12, bold: true };

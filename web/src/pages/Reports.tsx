@@ -156,7 +156,9 @@ export default function Reports() {
   }
 
   async function exportServices() {
-    const suffix = queryString ? `?${queryString}` : '';
+    const params = new URLSearchParams(queryString);
+    if (!params.has('billable')) params.set('billable', 'true');
+    const suffix = `?${params.toString()}`;
     await download(
       `/api/export/activities/services-excel${suffix}`,
       'cuenta_servicios_actividades.xlsx',
