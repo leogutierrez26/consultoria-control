@@ -7,19 +7,26 @@ export default function Reports() {
   const [hours, setHours] = useState<any>(null);
   const [byProject, setByProject] = useState<any[]>([]);
   const [byClient, setByClient] = useState<any[]>([]);
+  const [clients, setClients] = useState<any[]>([]);
   const [range, setRange] = useState({ from: new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10), to: new Date().toISOString().slice(0, 10) });
+  const [clientId, setClientId] = useState('');
 
   async function load() {
-    const r: any = await api.get(`/reports/hours?from=${range.from}&to=${range.to}`, token);
+    const clientQuery = user?.role === 'admin' && clientId ? `&client_id=${clientId}` : '';
+    const r: any = await api.get(`/reports/hours?from=${range.from}&to=${range.to}${clientQuery}`, token);
     setHours(r.summary);
     const bp: any = await api.get('/reports/by-project', token); setByProject(bp.report || []);
-    if (user?.role === 'admin') { const bc: any = await api.get('/reports/by-client', token); setByClient(bc.report || []); }
+    if (user?.role === 'admin') {
+      const bc: any = await api.get('/reports/by-client', token); setByClient(bc.report || []);
+      const cl: any = await api.get('/clients', token); setClients(cl.clients || []);
+    }
   }
   useEffect(() => { load(); }, [token]);
 
   async function exportAs(fmt: 'csv' | 'excel' | 'pdf') {
     const ep = fmt === 'excel' ? 'excel' : fmt;
-    const url = `/api/export/hours/${ep}?from=${range.from}&to=${range.to}`;
+    const clientQuery = user?.role === 'admin' && clientId ? `&client_id=${clientId}` : '';
+    const url = `/api/export/hours/${ep}?from=${range.from}&to=${range.to}${clientQuery}`;
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) { alert('No se pudo exportar (HTTP ' + res.status + ')'); return; }
     const blob = await res.blob();
@@ -32,16 +39,33 @@ export default function Reports() {
     URL.revokeObjectURL(a.href);
   }
 
+  async function exportServices() {
+    const clientQuery = user?.role === 'admin' && clientId ? `&client_id=${clientId}` : '';
+    const url = `/api/export/activities/services-excel?from=${range.from}&to=${range.to}${clientQuery}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) { alert('No se pudo exportar el formato de servicios (HTTP ' + res.status + ')'); return; }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([blob], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    a.download = 'reporte_servicios_actividades.xlsx';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(a.href);
+  }
+
   return (
     <div>
       <h2>Reportes</h2>
       <div className="row">
         <div><label>Desde</label><input type="date" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} /></div>
         <div><label>Hasta</label><input type="date" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} /></div>
+        {user?.role === 'admin' && <div><label>Cliente</label><select value={clientId} onChange={(e) => setClientId(e.target.value)}>
+          <option value="">Todos</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.legal_name}</option>)}
+        </select></div>}
         <button onClick={load}>Generar</button>
         <button className="ghost" type="button" onClick={() => exportAs('csv')}>CSV</button>
         <button className="ghost" type="button" onClick={() => exportAs('excel')}>Excel</button>
         <button className="ghost" type="button" onClick={() => exportAs('pdf')}>PDF</button>
+        <button className="ghost" type="button" onClick={exportServices}>Formato servicios</button>
       </div>
       {hours && (
         <div className="grid cols-3" style={{ marginTop: 16 }}>

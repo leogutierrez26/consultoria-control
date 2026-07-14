@@ -83,7 +83,7 @@ export default function AdminDashboard() {
               <button className="work-item" key={a.id} onClick={() => go(`/activities`)}>
                 <span>
                   <b>{a.title}</b>
-                  <small>{a.client_name} · {a.project_name}</small>
+                  <small>{a.client_name || 'Interna'} · {a.project_name}</small>
                 </span>
                 <span className={`badge ${dueClass(a.due_date)}`}>{fmtDate(a.due_date)}</span>
               </button>
@@ -121,7 +121,7 @@ export default function AdminDashboard() {
               <button className="work-item" key={a.id} onClick={() => go('/activities')}>
                 <span>
                   <b>{a.title}</b>
-                  <small>{a.client_name} · {a.project_name}</small>
+                  <small>{a.client_name || 'Interna'} · {a.project_name}</small>
                 </span>
                 <span className="badge warn">{a.status}</span>
               </button>

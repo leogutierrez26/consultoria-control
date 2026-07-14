@@ -1,6 +1,6 @@
 {
   "name": "server",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Backend de Consultoría Control (API REST en TypeScript + Node.js + Express + PostgreSQL).",
   "main": "dist/index.js",
   "scripts": {

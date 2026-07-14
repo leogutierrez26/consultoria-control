@@ -386,6 +386,22 @@ tbody tr:hover { background: rgba(59,130,246,.06); }
   border-radius: 16px;
   box-shadow: var(--shadow);
 }
+.modal.wide { width: 780px; }
+.check-field {
+  display: flex;
+  align-items: end;
+  padding-bottom: 4px;
+}
+.check-field label,
+label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+input[type="checkbox"] {
+  width: auto;
+  margin-top: 0;
+}
 
 /* ===== Scrollbar ===== */
 * { scrollbar-width: thin; scrollbar-color: var(--panel2) transparent; }

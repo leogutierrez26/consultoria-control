@@ -25,12 +25,15 @@ router.post(
 
     // Validar acceso a la actividad
     const act = await query(
-      `SELECT a.id, p.client_id, p.visible_to_client FROM activities a JOIN projects p ON p.id = a.project_id WHERE a.id = $1`,
+      `SELECT a.id, a.project_id, a.visible_to_client,
+              COALESCE(a.client_id, p.client_id) AS effective_client_id,
+              p.visible_to_client AS project_visible_to_client
+       FROM activities a LEFT JOIN projects p ON p.id = a.project_id WHERE a.id = $1`,
       [activity_id]
     );
     if (!act.rows[0]) return res.status(404).json({ error: 'Actividad no encontrada' });
     const a = act.rows[0];
-    if (rid && (rid !== a.client_id || !a.visible_to_client)) {
+    if (rid && (rid !== a.effective_client_id || !a.visible_to_client || (a.project_id && !a.project_visible_to_client))) {
       return res.status(403).json({ error: 'No autorizado' });
     }
     // Un cliente solo puede crear visibilidad 'cliente' (no privada - RF-SEG-003)
@@ -44,8 +47,8 @@ router.post(
     );
 
     // RN-011: actualización privada no genera correo
-    if (notify && finalVisibility !== 'privada' && a.client_id) {
-      const c = await query('SELECT legal_name, email FROM clients WHERE id = $1', [a.client_id]);
+    if (notify && finalVisibility !== 'privada' && a.effective_client_id) {
+      const c = await query('SELECT legal_name, email FROM clients WHERE id = $1', [a.effective_client_id]);
       if (c.rows[0] && c.rows[0].email) {
         await sendMail({ to: c.rows[0].email, subject: 'Actualización de actividad', html: templates.activityUpdate(c.rows[0].legal_name, activity_id, content) });
       }
@@ -60,10 +63,16 @@ router.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     const rid = currentClientId(req);
-    const act = await query('SELECT a.id, p.client_id, p.visible_to_client FROM activities a JOIN projects p ON p.id = a.project_id WHERE a.id = $1', [req.params.activityId]);
+    const act = await query(
+      `SELECT a.id, a.project_id, a.visible_to_client,
+              COALESCE(a.client_id, p.client_id) AS effective_client_id,
+              p.visible_to_client AS project_visible_to_client
+       FROM activities a LEFT JOIN projects p ON p.id = a.project_id WHERE a.id = $1`,
+      [req.params.activityId]
+    );
     if (!act.rows[0]) return res.status(404).json({ error: 'No encontrada' });
     const a = act.rows[0];
-    if (rid && (rid !== a.client_id || !a.visible_to_client)) {
+    if (rid && (rid !== a.effective_client_id || !a.visible_to_client || (a.project_id && !a.project_visible_to_client))) {
       return res.status(403).json({ error: 'No autorizado' });
     }
     // RF-SEG-003: cliente no ve privadas

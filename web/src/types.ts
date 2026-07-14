@@ -48,7 +48,11 @@ export interface Project {
 
 export interface Activity {
   id: string;
-  project_id: string;
+  client_id: string | null;
+  effective_client_id?: string | null;
+  client_name?: string;
+  project_id: string | null;
+  project_name?: string;
   parent_activity_id: string | null;
   title: string;
   description: string | null;

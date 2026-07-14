@@ -56,9 +56,11 @@ router.get(
         [rid]
       );
       const openActivities = await query(
-        `SELECT a.id, a.title, a.status, a.priority, a.due_date, a.progress, p.name AS project_name
-         FROM activities a JOIN projects p ON p.id = a.project_id
-         WHERE p.client_id = $1 AND p.visible_to_client = true AND a.visible_to_client = true
+        `SELECT a.id, a.title, a.status, a.priority, a.due_date, a.progress, COALESCE(p.name, 'Sin proyecto') AS project_name
+         FROM activities a LEFT JOIN projects p ON p.id = a.project_id
+         WHERE COALESCE(a.client_id, p.client_id) = $1
+           AND (p.id IS NULL OR p.visible_to_client = true)
+           AND a.visible_to_client = true
            AND a.status NOT IN ('finalizada','cancelada')
          ORDER BY
            CASE WHEN a.due_date IS NOT NULL AND a.due_date < CURRENT_DATE THEN 0 ELSE 1 END,
@@ -68,11 +70,13 @@ router.get(
         [rid]
       );
       const recentUpdates = await query(
-        `SELECT u.id, u.activity_id, u.type, u.content, u.created_at, a.title AS activity_title, p.name AS project_name
+        `SELECT u.id, u.activity_id, u.type, u.content, u.created_at, a.title AS activity_title, COALESCE(p.name, 'Sin proyecto') AS project_name
          FROM updates u
          JOIN activities a ON a.id = u.activity_id
-         JOIN projects p ON p.id = a.project_id
-         WHERE p.client_id = $1 AND p.visible_to_client = true AND a.visible_to_client = true
+         LEFT JOIN projects p ON p.id = a.project_id
+         WHERE COALESCE(a.client_id, p.client_id) = $1
+           AND (p.id IS NULL OR p.visible_to_client = true)
+           AND a.visible_to_client = true
            AND u.visibility <> 'privada'
          ORDER BY u.created_at DESC
          LIMIT 6`,
@@ -105,10 +109,10 @@ router.get(
       const timer = await query('SELECT id FROM timers WHERE user_id = $1', [uid]);
       const dueActivities = await query(
         `SELECT a.id, a.title, a.status, a.priority, a.due_date, a.progress,
-                p.name AS project_name, c.legal_name AS client_name
+                COALESCE(p.name, 'Sin proyecto') AS project_name, c.legal_name AS client_name
          FROM activities a
-         JOIN projects p ON p.id = a.project_id
-         JOIN clients c ON c.id = p.client_id
+         LEFT JOIN projects p ON p.id = a.project_id
+         LEFT JOIN clients c ON c.id = COALESCE(a.client_id, p.client_id)
          WHERE a.status NOT IN ('finalizada','cancelada')
            AND (a.due_date IS NULL OR a.due_date <= CURRENT_DATE + INTERVAL '7 days')
          ORDER BY
@@ -128,10 +132,10 @@ router.get(
          LIMIT 8`
       );
       const blockedActivities = await query(
-        `SELECT a.id, a.title, a.status, a.due_date, p.name AS project_name, c.legal_name AS client_name
+        `SELECT a.id, a.title, a.status, a.due_date, COALESCE(p.name, 'Sin proyecto') AS project_name, c.legal_name AS client_name
          FROM activities a
-         JOIN projects p ON p.id = a.project_id
-         JOIN clients c ON c.id = p.client_id
+         LEFT JOIN projects p ON p.id = a.project_id
+         LEFT JOIN clients c ON c.id = COALESCE(a.client_id, p.client_id)
          WHERE a.status IN ('bloqueada','esperando_info')
          ORDER BY a.updated_at DESC
          LIMIT 8`
