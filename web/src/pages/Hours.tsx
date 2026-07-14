@@ -105,11 +105,11 @@ export default function Hours() {
   async function add(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    if (!form.project_id) { setError('Selecciona un proyecto para registrar horas.'); return; }
+    if (!form.project_id && !form.activity_id && !form.use_bank) { setError('Selecciona un proyecto, una actividad o marca Usar bolsa de horas.'); return; }
     const clientId = form.client_id || normalizeProject(form.project_id);
     await api.post('/hours', {
       client_id: clientId,
-      project_id: form.project_id,
+      project_id: form.project_id || null,
       activity_id: form.activity_id || null,
       work_date: form.work_date,
       duration_minutes: Number(form.duration_minutes),
@@ -122,10 +122,10 @@ export default function Hours() {
 
   async function startTimer() {
     setError('');
-    if (!timerForm.project_id) { setError('Selecciona un proyecto antes de iniciar el cronómetro.'); return; }
+    if (!timerForm.project_id && !timerForm.activity_id && !timerForm.use_bank) { setError('Selecciona un proyecto, una actividad o marca Usar bolsa de horas.'); return; }
     await api.post('/hours/timer/start', {
       client_id: timerForm.client_id || normalizeProject(timerForm.project_id),
-      project_id: timerForm.project_id,
+      project_id: timerForm.project_id || null,
       activity_id: timerForm.activity_id || null,
       description: timerForm.use_bank ? `Bolsa de horas - ${timerForm.description || 'Trabajo en consultoría'}` : (timerForm.description || 'Trabajo en consultoría')
     }, token);

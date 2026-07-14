@@ -9,13 +9,73 @@ import { evaluateAfterHours } from '../hourbank';
 
 const router = Router();
 
+async function ensureHourBankProject(clientId: string): Promise<string> {
+  const code = 'BOLSA-HORAS';
+  const existing = await query(
+    `SELECT id FROM projects WHERE client_id = $1 AND code = $2 LIMIT 1`,
+    [clientId, code]
+  );
+  if (existing.rows[0]) {
+    await query(
+      `UPDATE projects
+       SET status = CASE WHEN status = 'archivado' THEN 'en_ejecucion' ELSE status END,
+           visible_to_client = false,
+           updated_at = NOW()
+       WHERE id = $1`,
+      [existing.rows[0].id]
+    );
+    return existing.rows[0].id;
+  }
+  const id = uuid();
+  await query(
+    `INSERT INTO projects (id, client_id, code, name, description, status, priority, visible_to_client, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,'en_ejecucion','media',false,NOW(),NOW())`,
+    [id, clientId, code, 'Bolsa de horas', 'Proyecto operativo automático para registrar consumo de bolsas de horas.']
+  );
+  return id;
+}
+
+async function resolveHourContext(clientId?: string | null, projectId?: string | null, activityId?: string | null) {
+  let resolvedClientId = clientId || '';
+  let resolvedProjectId = projectId || null;
+
+  if (activityId) {
+    const activityR = await query(
+      `SELECT a.client_id, a.project_id, p.client_id AS project_client_id
+       FROM activities a
+       LEFT JOIN projects p ON p.id = a.project_id
+       WHERE a.id = $1`,
+      [activityId]
+    );
+    const activity = activityR.rows[0];
+    if (!activity) throw new ApiError(400, 'Actividad no encontrada');
+    resolvedClientId = activity.client_id || activity.project_client_id || resolvedClientId;
+    resolvedProjectId = resolvedProjectId || activity.project_id || null;
+  }
+
+  if (resolvedProjectId) {
+    const projectR = await query('SELECT client_id FROM projects WHERE id = $1', [resolvedProjectId]);
+    const project = projectR.rows[0];
+    if (!project) throw new ApiError(400, 'Proyecto no encontrado');
+    if (resolvedClientId && resolvedClientId !== project.client_id) {
+      throw new ApiError(400, 'El cliente no coincide con el proyecto seleccionado');
+    }
+    resolvedClientId = project.client_id;
+  }
+
+  if (!resolvedClientId) throw new ApiError(400, 'Selecciona un cliente para registrar horas');
+  if (!resolvedProjectId) resolvedProjectId = await ensureHourBankProject(resolvedClientId);
+  return { client_id: resolvedClientId, project_id: resolvedProjectId };
+}
+
 // RF-HOR-001 Crear entrada manual
 router.post(
   '/',
   requireAdmin,
   validate([
-    body('client_id').isUUID(),
-    body('project_id').isUUID(),
+    body('client_id').optional({ nullable: true, checkFalsy: true }).isUUID(),
+    body('project_id').optional({ nullable: true, checkFalsy: true }).isUUID(),
+    body('activity_id').optional({ nullable: true, checkFalsy: true }).isUUID(),
     body('work_date').isISO8601()
   ]),
   asyncHandler(async (req, res) => {
@@ -33,14 +93,15 @@ router.post(
     if (!dur || dur <= 0) return res.status(400).json({ error: 'Duración inválida' });
 
     // RN-013/RN-019 asociar a cliente y proyecto
+    const resolved = await resolveHourContext(client_id, project_id || null, activity_id || null);
     const id = uuid();
     await query(
       `INSERT INTO time_entries (id, user_id, client_id, project_id, activity_id, work_date, start_time, end_time, duration_minutes, description, billable, rate, created_at, updated_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NOW())`,
-      [id, uid, client_id, project_id, activity_id || null, work_date.slice(0, 10), start_time || null, end_time || null, dur, description, billable, rate]
+      [id, uid, resolved.client_id, resolved.project_id, activity_id || null, work_date.slice(0, 10), start_time || null, end_time || null, dur, description, billable, rate]
     );
     audit({ user_id: uid, action: 'hours_log', entity: 'time_entries', entity_id: id, new_values: { duration_minutes: dur, billable } });
-    await evaluateAfterHours(client_id);
+    await evaluateAfterHours(resolved.client_id);
     res.status(201).json({ entry: { id, duration_minutes: dur } });
   })
 );
@@ -94,11 +155,12 @@ router.post(
     const { client_id, project_id, activity_id, description } = req.body;
     const existing = await query('SELECT * FROM timers WHERE user_id = $1', [uid]);
     if (existing.rows.length) return res.status(409).json({ error: 'Ya tiene un cronómetro activo' });
+    const resolved = await resolveHourContext(client_id, project_id || null, activity_id || null);
     const id = uuid();
     await query(
       `INSERT INTO timers (id, user_id, client_id, project_id, activity_id, description, started_at, accumulated_seconds)
        VALUES ($1,$2,$3,$4,$5,$6,NOW(),0)`,
-      [id, uid, client_id, project_id, activity_id || null, description]
+      [id, uid, resolved.client_id, resolved.project_id, activity_id || null, description]
     );
     res.status(201).json({ timer: { id, started_at: new Date().toISOString() } });
   })

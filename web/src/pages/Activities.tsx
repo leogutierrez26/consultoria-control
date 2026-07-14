@@ -141,12 +141,12 @@ export default function Activities() {
     setMsg('');
     const project_id = hoursF.project_id;
     const client_id = hoursF.client_id || projectClientId(project_id);
-    if (!project_id) { setMsg('Selecciona un proyecto para registrar las horas de la actividad.'); return; }
+    if (!project_id && !hoursF.use_bank) { setMsg('Selecciona un proyecto o marca Usar bolsa de horas.'); return; }
     if (!client_id) { setMsg('Selecciona un cliente o un proyecto con cliente asociado.'); return; }
     try {
       await api.post('/hours', {
         client_id,
-        project_id,
+        project_id: project_id || null,
         activity_id: loggingHours.id,
         work_date: hoursF.work_date,
         duration_minutes: Number(hoursF.duration_minutes),
@@ -290,7 +290,7 @@ export default function Activities() {
               <div><label>Proyecto</label><select value={hoursF.project_id} onChange={(e) => {
                 const project_id = e.target.value;
                 setHoursF({ ...hoursF, project_id, client_id: project_id ? projectClientId(project_id) : hoursF.client_id });
-              }} required>
+              }} required={!hoursF.use_bank}>
                 <option value="">Selecciona proyecto</option>{projectsForClient(hoursF.client_id).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select></div>
               <div><label>Fecha</label><input type="date" value={hoursF.work_date} onChange={(e) => setHoursF({ ...hoursF, work_date: e.target.value })} required /></div>
