@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useSession } from '../App';
 
@@ -76,11 +77,12 @@ export default function Projects() {
   }
 
   async function removeProject(p: any) {
-    if (!window.confirm(`¿Eliminar/archivar el proyecto "${p.name}"?`)) return;
+    if (!window.confirm(`¿Eliminar el proyecto "${p.name}" de la vista operativa?`)) return;
     setMsg('');
     try {
-      await api.post(`/projects/${p.id}/archive`, {}, token);
-      await load();
+      const r: any = await api.post(`/projects/${p.id}/delete`, {}, token);
+      setProjects((current) => current.filter((project) => project.id !== p.id));
+      setMsg(r.mode === 'deleted' ? 'Proyecto eliminado.' : 'Proyecto archivado y oculto porque tenía información relacionada.');
     } catch (err: any) { setMsg(err.message); }
   }
 
@@ -88,6 +90,7 @@ export default function Projects() {
     <div>
       <div className="row"><h2>Proyectos</h2><span className="spacer" />
         {user?.role === 'admin' && <button onClick={() => setShow(!show)}>Nuevo proyecto</button>}</div>
+      {msg && <div className={`msg ${msg.includes('eliminado') || msg.includes('archivado') ? 'ok' : 'err'}`}>{msg}</div>}
       {show && (
         <form className="card" onSubmit={create}>
           <div className="grid cols-2">
@@ -114,10 +117,10 @@ export default function Projects() {
               <td>{p.client_name}</td><td>{p.code}</td><td>{p.name}</td>
               <td><span className="badge">{p.status}</span></td><td>{p.progress}%</td>
               <td className="row">
-                <a href={`#/activities?project=${p.id}`}><button className="ghost">Actividades</button></a>
+                <Link to={`/activities?project=${p.id}`}><button className="ghost">Actividades</button></Link>
                 {user?.role === 'admin' && <>
                   <button className="ghost" onClick={() => startEdit(p)}>Editar</button>
-                  <button className="danger" onClick={() => removeProject(p)} disabled={p.status === 'archivado'}>Eliminar</button>
+                  <button className="danger" onClick={() => removeProject(p)}>Eliminar</button>
                 </>}
               </td>
             </tr>
@@ -150,7 +153,6 @@ export default function Projects() {
               <div className="check-field"><label><input type="checkbox" checked={editF.visible_to_client} onChange={(e) => setEditF({ ...editF, visible_to_client: e.target.checked })} /> Visible para el cliente</label></div>
               <div style={{ gridColumn: '1 / -1' }}><label>Descripción</label><textarea value={editF.description} onChange={(e) => setEditF({ ...editF, description: e.target.value })} /></div>
             </div>
-            {msg && <div className="msg err">{msg}</div>}
             <div className="row" style={{ marginTop: 12 }}>
               <button>Guardar cambios</button>
               <button type="button" className="ghost" onClick={() => setEditing(null)}>Cancelar</button>

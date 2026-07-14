@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import React, { Component, ErrorInfo, createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { NavLink, Routes, Route, Navigate } from 'react-router-dom';
 import { api, tokenStore } from './api';
 import { User } from './types';
 import Login from './pages/Login';
@@ -63,21 +63,23 @@ export default function App() {
         {user && (
           <Route path="/*" element={
             <Layout>
-              <Routes>
-                <Route path="/" element={user.role === 'admin' ? <AdminDashboard /> : <ClientDashboard />} />
-                <Route path="/clients" element={<Clients />} />
-                <Route path="/projects" element={<Projects />} />
-                <Route path="/activities" element={<Activities />} />
-                <Route path="/kanban" element={<Kanban />} />
-                <Route path="/agenda" element={<Agenda />} />
-                <Route path="/appointments" element={<Appointments />} />
-                <Route path="/hours" element={<Hours />} />
-                <Route path="/reports" element={<Reports />} />
-                <Route path="/notifications" element={<Notifications />} />
-                <Route path="/hourbank" element={<HourBank />} />
-                <Route path="/templates" element={<Templates />} />
-                <Route path="/audit" element={<Audit />} />
-              </Routes>
+              <AppErrorBoundary>
+                <Routes>
+                  <Route path="/" element={user.role === 'admin' ? <AdminDashboard /> : <ClientDashboard />} />
+                  <Route path="/clients" element={<Clients />} />
+                  <Route path="/projects" element={<Projects />} />
+                  <Route path="/activities" element={<Activities />} />
+                  <Route path="/kanban" element={<Kanban />} />
+                  <Route path="/agenda" element={<Agenda />} />
+                  <Route path="/appointments" element={<Appointments />} />
+                  <Route path="/hours" element={<Hours />} />
+                  <Route path="/reports" element={<Reports />} />
+                  <Route path="/notifications" element={<Notifications />} />
+                  <Route path="/hourbank" element={<HourBank />} />
+                  <Route path="/templates" element={<Templates />} />
+                  <Route path="/audit" element={<Audit />} />
+                </Routes>
+              </AppErrorBoundary>
             </Layout>
           } />
         )}
@@ -88,7 +90,6 @@ export default function App() {
 
 function Layout({ children }: { children: ReactNode }) {
   const { user, logout } = useSession();
-  const loc = window.location.pathname;
   const nav = [
     { to: '/', label: 'Inicio' },
     ...(user?.role === 'admin' ? [{ to: '/clients', label: 'Clientes' }] : []),
@@ -110,7 +111,7 @@ function Layout({ children }: { children: ReactNode }) {
         <div className="brand">Consultoría Control</div>
         <nav>
           {nav.map((n) => (
-            <a key={n.to} href={`#${n.to}`} className={loc === n.to ? 'active' : ''} onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', n.to); window.dispatchEvent(new PopStateEvent('popstate')); }}>{n.label}</a>
+            <NavLink key={n.to} to={n.to} end={n.to === '/'}>{n.label}</NavLink>
           ))}
         </nav>
         <div className="sidebar-foot">
@@ -121,4 +122,32 @@ function Layout({ children }: { children: ReactNode }) {
       <main className="content">{children}</main>
     </div>
   );
+}
+
+class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[frontend]', error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="card">
+          <h2>No se pudo mostrar esta sección</h2>
+          <p className="msg err">{this.state.error.message}</p>
+          <button onClick={() => this.setState({ error: null })}>Reintentar</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }

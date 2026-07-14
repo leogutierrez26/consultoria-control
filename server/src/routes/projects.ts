@@ -3,7 +3,7 @@ import { body } from 'express-validator';
 import { v4 as uuid } from 'uuid';
 import { requireAuth, requireAdmin, currentClientId, isAdmin, ApiError } from '../auth';
 import { asyncHandler, validate } from '../middleware';
-import { query } from '../db';
+import { query, transaction } from '../db';
 import { audit } from '../audit';
 import { sendMail, templates } from '../mail';
 import { notifyClient, notifyAdmins } from '../notifications';
@@ -54,12 +54,17 @@ router.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     const scope = clientScope(req);
+    const includeArchived = req.query.include_archived === 'true';
     let sql = `SELECT p.*, c.legal_name AS client_name FROM projects p JOIN clients c ON c.id = p.client_id`;
     const vals: any[] = [];
+    const filters: string[] = [];
     if (scope) {
-      sql += ' WHERE p.client_id = $1 AND p.visible_to_client = true';
+      filters.push(`p.client_id = $${vals.length + 1}`);
       vals.push(scope);
+      filters.push('p.visible_to_client = true');
     }
+    if (!includeArchived) filters.push("p.status <> 'archivado'");
+    if (filters.length) sql += ' WHERE ' + filters.join(' AND ');
     sql += ' ORDER BY p.created_at DESC';
     const r = await query(sql, vals);
     res.json({ projects: r.rows });
@@ -121,6 +126,49 @@ router.post(
     await query("UPDATE projects SET status = 'archivado', updated_at = NOW() WHERE id = $1", [req.params.id]);
     audit({ user_id: (req as any).user.uid, action: 'update', entity: 'projects', entity_id: req.params.id, new_values: { status: 'archivado' } });
     res.json({ ok: true });
+  })
+);
+
+// Eliminar proyecto de la vista operativa. Si no tiene información relacionada
+// se elimina físicamente; si ya tiene trazabilidad, se archiva y se oculta.
+router.post(
+  '/:id/delete',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const result = await transaction(async (client) => {
+      const oldR = await client.query('SELECT * FROM projects WHERE id = $1', [req.params.id]);
+      const old = oldR.rows[0];
+      if (!old) return { missing: true };
+
+      const deps = await client.query(
+        `SELECT
+          (SELECT COUNT(*)::int FROM activities WHERE project_id = $1) AS activities,
+          (SELECT COUNT(*)::int FROM appointments WHERE project_id = $1) AS appointments,
+          (SELECT COUNT(*)::int FROM time_entries WHERE project_id = $1) AS time_entries,
+          (SELECT COUNT(*)::int FROM timers WHERE project_id = $1) AS timers`,
+        [req.params.id]
+      );
+      const hasHistory = Object.values(deps.rows[0]).some((v) => Number(v) > 0);
+      if (!hasHistory) {
+        await client.query('DELETE FROM projects WHERE id = $1', [req.params.id]);
+        return { mode: 'deleted', old };
+      }
+      await client.query(
+        "UPDATE projects SET status = 'archivado', visible_to_client = false, updated_at = NOW() WHERE id = $1",
+        [req.params.id]
+      );
+      return { mode: 'archived', old };
+    });
+    if ((result as any).missing) return res.status(404).json({ error: 'No encontrado' });
+    audit({
+      user_id: (req as any).user.uid,
+      action: 'delete',
+      entity: 'projects',
+      entity_id: req.params.id,
+      old_values: (result as any).old,
+      new_values: { mode: (result as any).mode }
+    });
+    res.json({ ok: true, mode: (result as any).mode });
   })
 );
 
