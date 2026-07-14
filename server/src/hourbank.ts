@@ -5,14 +5,30 @@ import { notify, notifyClient, notifyAdmins } from './notifications';
 export async function evaluateHourBank(clientId: string): Promise<void> {
   const c = await query('SELECT * FROM clients WHERE id = $1', [clientId]);
   const client = c.rows[0];
-  if (!client || !client.hour_bank_enabled || !client.hour_bank_contracted) return;
+  if (!client) return;
 
-  const used = await query(
-    `SELECT COALESCE(SUM(duration_minutes),0) AS min FROM time_entries WHERE client_id = $1`,
+  const subR = await query(
+    `SELECT * FROM hour_bank_subscriptions
+     WHERE client_id = $1 AND status = 'activa'
+     ORDER BY start_date DESC LIMIT 1`,
     [clientId]
   );
+  const subscription = subR.rows[0];
+  if (!subscription && (!client.hour_bank_enabled || !client.hour_bank_contracted)) return;
+
+  const start = subscription?.start_date || client.hour_bank_start;
+  const end = subscription?.end_date || client.hour_bank_end;
+  const vals: any[] = [clientId];
+  const filters = ['client_id = $1'];
+  if (start) { filters.push(`work_date >= $${vals.length + 1}`); vals.push(start); }
+  if (end) { filters.push(`work_date <= $${vals.length + 1}`); vals.push(end); }
+  const used = await query(
+    `SELECT COALESCE(SUM(duration_minutes),0) AS min FROM time_entries WHERE ${filters.join(' AND ')}`,
+    vals
+  );
   const consumedMin = parseInt(used.rows[0].min || '0', 10);
-  const contractedMin = parseFloat(client.hour_bank_contracted) * 60;
+  const contractedHours = subscription?.hours_included || client.hour_bank_contracted;
+  const contractedMin = parseFloat(contractedHours) * 60;
   const pct = contractedMin > 0 ? (consumedMin / contractedMin) * 100 : 0;
 
   // Evita alertas repetidas: guardamos último umbral en settings por cliente.
@@ -22,7 +38,7 @@ export async function evaluateHourBank(clientId: string): Promise<void> {
 
   for (const threshold of [70, 85, 100]) {
     if (pct >= threshold && lastPct < threshold) {
-      const msg = `Bolsa de horas al ${threshold}% (${ (consumedMin / 60).toFixed(1) }/${client.hour_bank_contracted} h)`;
+      const msg = `Bolsa de horas al ${threshold}% (${ (consumedMin / 60).toFixed(1) }/${contractedHours} h)`;
       await notifyClient(clientId, 'hora_consumida', msg);
       await notifyAdmins('hora_consumida', `Cliente ${client.legal_name}: ${msg}`);
     }

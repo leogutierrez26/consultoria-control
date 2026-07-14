@@ -104,6 +104,22 @@ async function getReportClientInfo(rid: string | null, client_id?: string, rows:
   return { legal_name: names.length > 1 ? 'Varios clientes' : 'Sin cliente asignado' };
 }
 
+async function getReportSubscription(clientId?: string | null, from?: string, to?: string) {
+  if (!clientId) return null;
+  const r = await query(
+    `SELECT *
+     FROM hour_bank_subscriptions
+     WHERE client_id = $1
+       AND status = 'activa'
+       AND start_date <= COALESCE($3::date, CURRENT_DATE)
+       AND (end_date IS NULL OR end_date >= COALESCE($2::date, start_date))
+     ORDER BY start_date DESC
+     LIMIT 1`,
+    [clientId, from || null, to || null]
+  );
+  return r.rows[0] || null;
+}
+
 function excelSerialDate(value: any): Date | null {
   if (!value) return null;
   return new Date(value);
@@ -217,6 +233,8 @@ router.get(
       req.query.billable as string
     );
     const clientInfo = await getReportClientInfo(rid, req.query.client_id as string, rows);
+    const reportClientId = rid || (req.query.client_id as string) || rows[0]?.client_id || null;
+    const subscription = await getReportSubscription(reportClientId, req.query.from as string, req.query.to as string);
     const defaultRate = Number(req.query.rate || 120000);
     const assistanceType = String(req.query.assistance || 'Remoto');
     const from = req.query.from as string;
@@ -269,9 +287,9 @@ router.get(
     ws.getCell('B6').value = 'Dirección';
     ws.getCell('C6').value = [clientInfo.address, clientInfo.city, clientInfo.country].filter(Boolean).join(', ') || 'N/A';
     ws.getCell('F6').value = 'Bolsa mensual';
-    ws.getCell('G6').value = clientInfo.hour_bank_enabled ? Number(clientInfo.hour_bank_monthly_fee || 0) : 'N/A';
+    ws.getCell('G6').value = subscription ? Number(subscription.monthly_fee || 0) : (clientInfo.hour_bank_enabled ? Number(clientInfo.hour_bank_monthly_fee || 0) : 'N/A');
     ws.getCell('B7').value = 'Horas bolsa';
-    ws.getCell('C7').value = clientInfo.hour_bank_enabled ? Number(clientInfo.hour_bank_contracted || 0) : 'N/A';
+    ws.getCell('C7').value = subscription ? Number(subscription.hours_included || 0) : (clientInfo.hour_bank_enabled ? Number(clientInfo.hour_bank_contracted || 0) : 'N/A');
     ws.getCell('F7').value = 'Generado';
     ws.getCell('G7').value = new Date();
     ws.mergeCells('C2:E2');
@@ -329,18 +347,20 @@ router.get(
     ws.getCell(`B${sectionRow}`).alignment = { horizontal: 'center', vertical: 'middle' };
     ws.getCell(`B${sectionRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFA6A6A6' } };
 
-    const bankEnabled = !!clientInfo.hour_bank_enabled && Number(clientInfo.hour_bank_contracted || 0) > 0;
-    const contractedHours = bankEnabled ? Number(clientInfo.hour_bank_contracted || 0) : 0;
-    const monthlyFee = bankEnabled ? Number(clientInfo.hour_bank_monthly_fee || 0) : 0;
+    const bankEnabled = !!subscription || (!!clientInfo.hour_bank_enabled && Number(clientInfo.hour_bank_contracted || 0) > 0);
+    const contractedHours = subscription ? Number(subscription.hours_included || 0) : (bankEnabled ? Number(clientInfo.hour_bank_contracted || 0) : 0);
+    const monthlyFee = subscription ? Number(subscription.monthly_fee || 0) : (bankEnabled ? Number(clientInfo.hour_bank_monthly_fee || 0) : 0);
+    const bankCostCenter = subscription?.cost_center || 'Bolsa de horas mensual';
+    const bankName = subscription?.name || 'Suscripción mensual bolsa de horas';
     let remainingBankHours = contractedHours;
     const reportLines: any[] = [];
 
     if (monthlyFee > 0) {
       reportLines.push({
-        title: 'Suscripción mensual bolsa de horas',
+        title: bankName,
         type: 'Cargo recurrente',
         quantity: 1,
-        costCenter: 'Bolsa de horas mensual',
+        costCenter: bankCostCenter,
         date: from ? new Date(`${from}T00:00:00`) : new Date(),
         unit: 'Mes',
         rate: monthlyFee,
@@ -361,7 +381,7 @@ router.get(
           title: `${source.title} (consumo bolsa de horas)`,
           type: 'Bolsa mensual',
           quantity: included,
-          costCenter: 'Bolsa de horas mensual',
+          costCenter: bankCostCenter,
           date,
           unit: 'Hora',
           rate: 0,
